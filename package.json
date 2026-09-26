@@ -1,0 +1,11 @@
+{
+  "name": "quilt-stone",
+  "version": "1.0.0",
+  "description": "THE canonical receipt-chain module for the SuperInstance fleet — one verifier for every repo's chain",
+  "type": "module",
+  "main": "stone.mjs",
+  "scripts": {
+    "smoke": "node smoke.mjs",
+    "verify": "node verify_all.mjs"
+  }
+}
