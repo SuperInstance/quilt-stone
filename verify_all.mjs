@@ -90,6 +90,7 @@ const LOCALS = {
   'quilt-quant': '../quilt-quant/shared/kit.mjs', // verifyChain THROWS; wrapped. Called with the repo's own chainFieldsOf (quant/quant/play.mjs line 142)
   'quilt-playtest': null, // inline tidepool transcription above (e10 lines 80–94)
   'quilt-raw': null, // inline transcription above
+  'quilt-stone': null, // self: stone.mjs IS this repo's verifier (marked self, not independent)
 };
 
 // localVerify(repo, rows) -> { available, ok, tip, native } — normalized view
@@ -102,6 +103,11 @@ export function localVerify(repo, rows) {
   if (repo === 'quilt-playtest') {
     const v = tidepoolVerifyChain(rows);
     return { available: true, ok: v.ok === true, tip: v.tip ?? null, native: v };
+  }
+  if (repo === 'quilt-stone') {
+    // self — the canonical verifier is this repo's own module; an independent
+    // local cross-check is impossible by construction (receipted as self)
+    return { available: true, self: true, ok: true, tip: null, native: 'self (stone.mjs)' };
   }
   const rel = LOCALS[repo];
   if (!rel) return { available: false, ok: null, tip: null, native: null };
@@ -219,6 +225,7 @@ export async function runConformance({ root = ROOT, log = () => {} } = {}) {
       tip: stone.tip,
       genesis: stone.genesis,
       localAvailable: local.available,
+      self: local.self ?? false,
       localOk: local.ok,
       localTip: local.tip,
       agree,
@@ -230,6 +237,7 @@ export async function runConformance({ root = ROOT, log = () => {} } = {}) {
     chainsFound: chains.length,
     chainsVerified: results.filter((r) => r.ok).length,
     chainsBroken: results.filter((r) => !r.ok).length,
+    selfChains: results.filter((r) => r.self).length,
     localCrossChecked: results.filter((r) => r.localAvailable).length,
     divergences: results.filter((r) => r.agree === false),
     nonChainJsonl: notChains.map((d) => ({ repo: d.repo, file: d.relFile, reason: d.reason })),

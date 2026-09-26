@@ -1,0 +1,84 @@
+{
+  "experiment": "E-ST1",
+  "repo": "quilt-stone",
+  "lane": "26-b",
+  "verdicts": {
+    "R1": true,
+    "R2": true,
+    "R3": true,
+    "R4": true,
+    "selfChainFromDisk": true
+  },
+  "tally": {
+    "reposScanned": 12,
+    "jsonlScanned": 54,
+    "chainsFound": 43,
+    "chainsVerified": 43,
+    "chainsBroken": 0,
+    "selfChains": 1,
+    "localCrossChecked": 43,
+    "divergences": [],
+    "nonChainJsonl": [
+      {
+        "repo": "quilt-arena",
+        "file": "quilt-arena/arena/outputs/round_ledger.jsonl",
+        "reason": "no link fields (not a chain)"
+      },
+      {
+        "repo": "quilt-arena",
+        "file": "quilt-arena/jeve/outputs/round_ledger.jsonl",
+        "reason": "no link fields (not a chain)"
+      },
+      {
+        "repo": "quilt-dba",
+        "file": "quilt-dba/experiments/outputs/.cache/dev_journal_ed2.jsonl",
+        "reason": "no link fields (not a chain)"
+      },
+      {
+        "repo": "quilt-dba",
+        "file": "quilt-dba/experiments/outputs/.cache/smoke_ed2/j1.jsonl",
+        "reason": "no link fields (not a chain)"
+      },
+      {
+        "repo": "quilt-dba",
+        "file": "quilt-dba/experiments/outputs/.cache/smoke_ed2/j2.jsonl",
+        "reason": "no link fields (not a chain)"
+      },
+      {
+        "repo": "quilt-dba",
+        "file": "quilt-dba/experiments/outputs/.cache/smoke_ed2/j3.jsonl",
+        "reason": "no link fields (not a chain)"
+      },
+      {
+        "repo": "quilt-dba",
+        "file": "quilt-dba/experiments/outputs/.cache/smoke_ed2/j4.jsonl",
+        "reason": "no link fields (not a chain)"
+      },
+      {
+        "repo": "quilt-dba",
+        "file": "quilt-dba/experiments/outputs/.cache/smoke_ed2/j5.jsonl",
+        "reason": "no link fields (not a chain)"
+      },
+      {
+        "repo": "quilt-dba",
+        "file": "quilt-dba/experiments/outputs/.cache/smoke_ed2/j6.jsonl",
+        "reason": "no link fields (not a chain)"
+      },
+      {
+        "repo": "quilt-dba",
+        "file": "quilt-dba/experiments/outputs/livejev_journal.jsonl",
+        "reason": "no link fields (not a chain)"
+      },
+      {
+        "repo": "quilt-dba",
+        "file": "quilt-dba/experiments/outputs/moth_stream_cache.jsonl",
+        "reason": "no link fields (not a chain)"
+      }
+    ]
+  },
+  "tip": "f9cc66e887e9caac91d77d4f0b9d9b7f25d693423e96e5c3c35aebd2ebcb7d54",
+  "finalTip": "db7e897d8cb1d02a06d489b41659832e4b1ad4d15a592f626666878dd4d135ea",
+  "alg": "stone-v1",
+  "genesis": "STONE-GENESIS-1",
+  "links": 53
+}
