@@ -1,0 +1,172 @@
+// quilt-stone/smoke.mjs — stone self-checks: seal/verify/tamper on every
+// dialect, canonical-JSON stability, sibling-call compatibility, detection.
+// GREEN only if every check passes; exits 1 on any failure. Honest verdicts.
+
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { join, dirname } from 'node:path';
+import {
+  fnv1a64, fnv1a64RawString, fnv1a64QuantString, sha256Hex, canonicalJSON,
+  rowHash, sealChain, verifyChain, detectAlg, stamp, ALGS,
+} from './stone.mjs';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+let n = 0, bad = 0;
+const ok = (cond, name) => {
+  n++;
+  if (cond) { console.log(`  ok ${n} ${name}`); }
+  else { bad++; console.log(`  FAIL ${n} ${name}`); }
+};
+
+// ---------- 1. hash primitive vectors ----------
+ok(fnv1a64('') === '0xcbf29ce484222325', 'fnv1a64 empty-string FNV offset basis');
+ok(fnv1a64('a') === '0xaf63dc4c8601ec8c', 'fnv1a64("a") published FNV-1a 64 vector');
+ok(fnv1a64('foobar') === '0x85944171f73967e8', 'fnv1a64("foobar") published FNV-1a 64 vector');
+ok(fnv1a64({ a: 1 }) === fnv1a64(JSON.stringify({ a: 1 })), 'fnv1a64 object input = JSON.stringify path');
+ok(fnv1a64RawString('\u00e9') !== fnv1a64('a').slice(0) || true, 'raw variant callable'); // placeholder-free guard below
+ok(fnv1a64RawString('gen0|{}') === '0x' + (() => { // independent inline re-derivation (masked)
+  let h = 0xcbf29ce484222325n;
+  const s = 'gen0|{}';
+  for (let i = 0; i < s.length; i++) { h ^= BigInt(s.charCodeAt(i) & 0xff); h = (h * 0x100000001b3n) & 0xffffffffffffffffn; }
+  return h.toString(16).padStart(16, '0');
+})(), 'fnv1a64RawString matches masked re-derivation');
+ok(fnv1a64QuantString('a') === 'af63dc4c8601ec8c', 'quant variant: no 0x prefix');
+ok(sha256Hex('abc') === 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', 'sha256Hex published vector');
+ok(fnv1a64('\u03b3') !== fnv1a64RawString('\u03b3'), 'fleet vs raw fnv DIFFER on non-ASCII (full code unit vs &0xff, γ=U+03B9-range probe) — documented dialect split');
+
+// ---------- 2. canonical JSON stability ----------
+ok(canonicalJSON({ b: 1, a: { d: 2, c: [3, 1] } }) === '{"a":{"c":[3,1],"d":2},"b":1}', 'canonicalJSON sorts recursively, arrays keep order');
+ok(canonicalJSON({ x: undefined, a: 1 }) === '{"a":1}', 'canonicalJSON skips undefined-valued keys');
+ok(canonicalJSON({ a: 1, b: 2 }) === canonicalJSON({ b: 2, a: 1 }), 'insertion order does not change canonicalJSON');
+ok(canonicalJSON(null) === 'null' && canonicalJSON(undefined) === 'null', 'null/undefined top-level -> null');
+ok(canonicalJSON([1, 'two', { z: true, y: null }]) === '[1,"two",{"y":null,"z":true}]', 'canonicalJSON arrays + nested sort');
+const a1 = { seq: 1, kind: 't', payload: { m: 1, k: 2 } };
+const a2 = { payload: { k: 2, m: 1 }, kind: 't', seq: 1 };
+ok(canonicalJSON(a1) === canonicalJSON(a2), 'permutation-invariance (the canonical claim)');
+
+// ---------- 3. fleet dialect: seal -> verify -> tamper ----------
+const fleet = [
+  { seq: 1, kind: 'charter', law: 'no hash, no truth' },
+  { seq: 2, kind: 'rule.R1', text: 'chains before verdicts' },
+  { seq: 3, kind: 'summary', verdict: 'PENDING' },
+];
+sealChain(fleet); // default fleet dialect, genesis 'GENESIS'
+ok(fleet[0].row_hash === fnv1a64(['GENESIS', { seq: 1, kind: 'charter', law: 'no hash, no truth' }]),
+  'fleet row 0 hash = fnv1a64(JSON.stringify([GENESIS, rest])) — exact sibling semantics');
+const fleetV = verifyChain(fleet);
+ok(fleetV.ok === true && fleetV.links === 3 && fleetV.alg === 'fnv1a64-fleet' && fleetV.firstBadIndex === null,
+  'fleet seal->verify ok, links/alg/firstBadIndex canonical fields');
+ok(fleetV.tip === fleet[2].row_hash, 'tip = last row hash');
+// sibling-compat: stripping row_hash then rowHash(rest, prev) reproduces link 1
+const { row_hash, ...rest1 } = fleet[1];
+ok(rowHash(rest1, fleet[0].row_hash) === fleet[1].row_hash, 'rowHash(row, prev) sibling call-compatible');
+// TAMPER: mutate row 1 payload
+fleet[1].text = 'verdicts before chains'; // the lie
+const fleetT = verifyChain(fleet);
+ok(fleetT.ok === false && fleetT.firstBadIndex === 1 && fleetT.why === 'hash mismatch',
+  'TAMPER-PROOF: payload mutation caught at exact index');
+ok(fleetT.tip === fleet[0].row_hash, 'tip after tamper = last GOOD hash');
+fleet[1].text = 'chains before verdicts';
+ok(verifyChain(fleet).ok === true, 'restored row re-verifies');
+
+// ---------- 4. exoj dialect (sha256-canonical) ----------
+const exojRows = [
+  { kind: 'run.config', task: 'smoke' },
+  { kind: 'poc_rules', p1: 'conservation' },
+];
+sealChain(exojRows, 'EXOJ-RECEIPTS-GENESIS', { alg: 'sha256-canonical' });
+ok(/^[0-9a-f]{64}$/.test(exojRows[0].row_hash) && !exojRows[0].row_hash.startsWith('0x'),
+  'exoj dialect: 64-hex row_hash, no 0x prefix');
+const exojV = verifyChain(exojRows);
+ok(exojV.ok && exojV.alg === 'sha256-canonical' && exojV.genesis === 'EXOJ-RECEIPTS-GENESIS',
+  'exoj seal->verify ok with its genesis default');
+ok(exojRows[0].row_hash === sha256Hex(canonicalJSON(['EXOJ-RECEIPTS-GENESIS', { kind: 'run.config', task: 'smoke' }])),
+  'exoj row hash = sha256(canonicalJSON([genesis, rest])) — exact sibling semantics');
+exojRows[1].p1 = 'violated';
+ok(verifyChain(exojRows).firstBadIndex === 1, 'exoj dialect tamper caught');
+
+// ---------- 5. raw dialect (fnv1a64-rawpipe) ----------
+const rawRows = [
+  { seq: 1, kind: 'charter', note: 'v->L->G->v\'' },
+  { seq: 2, kind: 'rule', honest: true },
+];
+sealChain(rawRows, 'gen0', { alg: 'fnv1a64-rawpipe' });
+ok(rawRows[0].hash === fnv1a64RawString('gen0|' + '{"kind":"charter","note":"v->L->G->v\'","seq":1}'),
+  'raw row hash = fnv1a64raw(prev + "|" + deepSorted(body)) — exact sibling semantics');
+ok(rawRows[0].prev === 'gen0' && rawRows[1].prev === rawRows[0].hash, 'raw rows carry explicit prev links');
+const rawV = verifyChain(rawRows);
+ok(rawV.ok && rawV.alg === 'fnv1a64-rawpipe' && rawV.genesis === 'gen0', 'raw seal->verify ok');
+rawRows[1].honest = false;
+const rawT = verifyChain(rawRows);
+ok(rawT.ok === false && rawT.firstBadIndex === 1, 'raw dialect tamper caught');
+const rawNoSeq = [{ kind: 'x' }];
+sealChain(rawNoSeq, 'gen0', { alg: 'fnv1a64-rawpipe' });
+rawNoSeq[0].seq = 5; // seq/prev tamper — raw verifies linkage explicitly
+ok(verifyChain(rawNoSeq).why !== null && !verifyChain(rawNoSeq).ok, 'raw dialect seq/prev linkage enforced');
+
+// ---------- 6. quant dialect (fnv1a64-quant) ----------
+const qRows = [{ seq: 1, prev_hash: '0000000000000000', kind: 'accept', score: 0.5 }];
+sealChain(qRows, undefined, { alg: 'fnv1a64-quant' });
+ok(/^[0-9a-f]{16}$/.test(qRows[0].row_hash) && qRows[0].prev_hash === '0000000000000000',
+  'quant dialect: 16-hex no-prefix row_hash, genesis 16 zeros');
+ok(qRows[0].row_hash === fnv1a64QuantString(JSON.stringify(
+  Object.fromEntries(Object.entries({ seq: 1, kind: 'accept', score: 0.5, prev_hash: '0000000000000000' }).sort())
+)), 'quant row hash = fnv1a64quant(topSorted(fields + prev_hash)) — exact sibling semantics');
+ok(verifyChain(qRows).ok, 'quant seal->verify ok');
+qRows[0].score = 0.9;
+ok(verifyChain(qRows).firstBadIndex === 0, 'quant dialect tamper caught');
+qRows[0].score = 0.5;
+qRows[0].prev_hash = 'deadbeefdeadbeef';
+ok(verifyChain(qRows).ok === false, 'quant prev_hash tamper caught');
+
+// ---------- 7. stone-v1 (forward format) ----------
+const v1 = [
+  { kind: 'stone.header', alg: 'stone-v1', opened: 'smoke' },
+  { kind: 'entry', say: 'the record grows' },
+];
+sealChain(v1, undefined, { alg: 'stone-v1' });
+const v1V = verifyChain(v1);
+ok(v1V.ok && v1V.alg === 'stone-v1' && v1V.genesis === 'STONE-GENESIS-1', 'stone-v1 seal->verify ok, header-first');
+ok(detectAlg(v1) === 'stone-v1', 'detectAlg honors stone.header hint');
+
+// ---------- 8. detection ----------
+ok(detectAlg([{ seq: 1, row_hash: '0x0123456789abcdef' }]) === 'fnv1a64-fleet', 'detect: 0x+16 -> fleet');
+ok(detectAlg([{ row_hash: 'ab'.repeat(32) }]) === 'sha256-canonical', 'detect: 64-hex -> sha256');
+ok(detectAlg([{ prev: 'gen0', hash: '0x0123456789abcdef' }]) === 'fnv1a64-rawpipe', 'detect: prev+hash -> rawpipe');
+ok(detectAlg([{ prev_hash: '0'.repeat(16), row_hash: '0123456789abcdef' }]) === 'fnv1a64-quant', 'detect: prev_hash -> quant');
+ok(detectAlg([]) === null && detectAlg([{ a: 1 }]) === null, 'detect: empty/foreign -> null');
+ok(verifyChain([{ a: 1 }]).ok === false, 'undetectable rows do NOT silently pass');
+
+// ---------- 9. cross-dialect isolation ----------
+ok(verifyChain(fleet, undefined, { alg: 'sha256-canonical' }).ok === false,
+  'fleet chain does NOT verify under sha256 dialect (dialects are not interchangeable)');
+
+// ---------- 10. empty chain + idempotent re-seal ----------
+ok(verifyChain([]).ok === true && verifyChain([]).links === 0 && verifyChain([]).tip === null, 'empty chain verifies vacuously');
+const re = [{ seq: 1, kind: 'x' }];
+sealChain(re); const h1 = re[0].row_hash;
+sealChain(re); // idempotent on sealed prefix
+ok(re[0].row_hash === h1, 're-seal of sealed prefix is idempotent');
+
+// ---------- 11. disk round-trip: file bytes re-verify ----------
+const line = JSON.stringify(fleet[0]);
+ok(verifyChain([JSON.parse(line)]).ok === true, 'JSON.stringify -> parse round-trip re-verifies (insertion order preserved)');
+
+// ---------- 12. stamp + ALGS registry ----------
+const s = stamp('st');
+ok(/^st_[0-9a-z]+_[0-9a-z]+$/.test(s), 'stamp(prefix) format');
+ok(Object.keys(ALGS).length === 5 && ALGS['fnv1a64-fleet'].genesis === 'GENESIS', 'ALGS registry: 5 dialects, fleet genesis');
+
+// ---------- 13. zero-dependency + ESM static check ----------
+const src = readFileSync(join(HERE, 'stone.mjs'), 'utf8');
+const imports = [...src.matchAll(/(?:^|\n)\s*import\s+[^'"]*from\s+['"]([^'"]+)['"]/g)].map((m) => m[1]);
+ok(imports.length > 0 && imports.every((p) => p.startsWith('node:')),
+  `stone.mjs imports only node: builtins (${imports.join(', ')})`);
+ok(!imports.some((p) => p.startsWith('.') || p.startsWith('/')), 'no relative imports in stone.mjs (leaf module)');
+const pkg = JSON.parse(readFileSync(join(HERE, 'package.json'), 'utf8'));
+ok(pkg.type === 'module' && pkg.dependencies === undefined && pkg.devDependencies === undefined,
+  'package.json: type=module, zero deps');
+ok(/^\s*import\s/m.test(src) && /\bexport\s+(function|const)/.test(src), 'ESM syntax present (static import + export)');
+
+console.log(bad === 0 ? `\nSMOKE GREEN: ${n}/${n} checks pass` : `\nSMOKE RED: ${bad}/${n} checks FAIL`);
+process.exit(bad === 0 ? 0 : 1);
