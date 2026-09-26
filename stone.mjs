@@ -174,6 +174,28 @@ export const ALGS = {
       return null;
     },
   },
+  'fnv1a64-tidepool': {
+    // DISCOVERED Task 26-b: quilt-playtest/tidepool-artifacts.jsonl (written by
+    // examples/e10_tidepool_artifacts.mjs). Same hash math as the quant dialect
+    // (top-level-sorted canon, full-code-unit fnv1a64, no 0x prefix, genesis
+    // 16 zeros) — but `seq` is EXCLUDED from the hash: at seal time the row was
+    // built as { seq: i, ...fields, row_hash } AFTER hashing, so the sealed
+    // content never contained seq. Structurally identical to fnv1a64-quant;
+    // discriminated from it by trial verification (see detectAlg).
+    repos: ['quilt-playtest'],
+    hashField: 'row_hash', prevField: 'prev_hash', genesis: '0000000000000000',
+    hashForm: /^[0-9a-f]{16}$/,
+    hashOf(row, prev) {
+      const fields = withoutKeys(row, ['row_hash', 'seq']);
+      fields.prev_hash = prev;
+      return fnv1a64QuantString(canonTop(fields));
+    },
+    setLinks(row, prev, hash) { row.prev_hash = prev; row.row_hash = hash; },
+    checkLink(row, prev /*, i*/) {
+      if (row.prev_hash !== prev) return 'prev_hash mismatch';
+      return null;
+    },
+  },
   'stone-v1': {
     // THE FORWARD FORMAT for NEW chains (STONE-SPEC.md §stone-v1):
     // sha256 over canonicalJSON, row_hash field, mandatory stone.header row 0,
@@ -190,20 +212,42 @@ export const ALGS = {
 
 // Detect the dialect of a row array. Order of tests is normative:
 //  1. explicit stone.header row (kind === 'stone.header' with an alg field)
-//  2. presence of prev_hash  -> fnv1a64-quant
+//  2. presence of prev_hash  -> fnv1a64-quant OR fnv1a64-tidepool (structurally
+//     identical link fields; discriminated by trial verification — quant first,
+//     then tidepool; a chain failing under both reports under quant)
 //  3. presence of prev+hash  -> fnv1a64-rawpipe
 //  4. row_hash format:  0x+16hex -> fleet; 64hex -> sha256-canonical;
 //     16hex -> quant; 0x+64hex -> sha256 (future-proof alias)
 // Returns the alg key or null if undetectable (empty rows / no hash fields).
+function trialOk(rows, algKey) {
+  let prev = ALGS[algKey].genesis;
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || typeof r !== 'object') return false;
+    if (r[ALGS[algKey].hashField] === undefined) return false;
+    if (ALGS[algKey].checkLink && ALGS[algKey].checkLink(r, prev, i)) return false;
+    const want = ALGS[algKey].hashOf(r, prev);
+    if (want !== r[ALGS[algKey].hashField]) return false;
+    prev = r[ALGS[algKey].hashField];
+  }
+  return true;
+}
+
 export function detectAlg(rows) {
   if (!Array.isArray(rows) || rows.length === 0) return null;
   const h0 = rows[0];
   if (h0 && typeof h0 === 'object' && h0.kind === 'stone.header' &&
       typeof h0.alg === 'string' && ALGS[h0.alg]) return h0.alg;
+  let hasPrevHash = false;
   for (const r of rows) {
     if (!r || typeof r !== 'object') continue;
-    if (r.prev_hash !== undefined) return 'fnv1a64-quant';
+    if (r.prev_hash !== undefined) { hasPrevHash = true; break; }
     if (r.prev !== undefined && r.hash !== undefined) return 'fnv1a64-rawpipe';
+  }
+  if (hasPrevHash) {
+    if (trialOk(rows, 'fnv1a64-quant')) return 'fnv1a64-quant';
+    if (trialOk(rows, 'fnv1a64-tidepool')) return 'fnv1a64-tidepool';
+    return 'fnv1a64-quant'; // fail under the primary shape, verdict carries why
   }
   let rh = null;
   for (const r of rows) {

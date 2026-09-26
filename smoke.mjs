@@ -119,6 +119,25 @@ qRows[0].score = 0.5;
 qRows[0].prev_hash = 'deadbeefdeadbeef';
 ok(verifyChain(qRows).ok === false, 'quant prev_hash tamper caught');
 
+// ---------- 6b. tidepool dialect (fnv1a64-tidepool, discovered 26-b) ----------
+// Seal-time shape reproduced: hash over {rec fields, prev_hash} — seq added
+// AFTER hashing (e10 line 93), so a sealed-from-scratch tidepool row carries
+// no seq; the on-disk artifact rows have seq appended post-hash.
+const tRows = [
+  { kind: 'playtest', title: 'dissent', body: 'x'.repeat(10), prev_hash: '0000000000000000' },
+];
+sealChain(tRows, undefined, { alg: 'fnv1a64-tidepool' });
+tRows[0].seq = 0; // post-hash append, exactly what e10 did
+ok(/^[0-9a-f]{16}$/.test(tRows[0].row_hash) && tRows[0].prev_hash === '0000000000000000',
+  'tidepool dialect: 16-hex row_hash, genesis 16 zeros');
+const tDisk = [JSON.parse(JSON.stringify(tRows[0]))];
+const tV = verifyChain(tDisk);
+ok(tV.ok && tV.alg === 'fnv1a64-tidepool', 'tidepool: on-disk row (seq present post-hash) re-verifies');
+ok(verifyChain(tDisk, undefined, { alg: 'fnv1a64-quant' }).ok === false,
+  'tidepool chain does NOT verify under quant dialect (seq-in-hash would break) — the two are distinct');
+tDisk[0].body = 'tampered';
+ok(verifyChain(tDisk).firstBadIndex === 0, 'tidepool dialect tamper caught');
+
 // ---------- 7. stone-v1 (forward format) ----------
 const v1 = [
   { kind: 'stone.header', alg: 'stone-v1', opened: 'smoke' },
@@ -155,7 +174,7 @@ ok(verifyChain([JSON.parse(line)]).ok === true, 'JSON.stringify -> parse round-t
 // ---------- 12. stamp + ALGS registry ----------
 const s = stamp('st');
 ok(/^st_[0-9a-z]+_[0-9a-z]+$/.test(s), 'stamp(prefix) format');
-ok(Object.keys(ALGS).length === 5 && ALGS['fnv1a64-fleet'].genesis === 'GENESIS', 'ALGS registry: 5 dialects, fleet genesis');
+ok(Object.keys(ALGS).length === 6 && ALGS['fnv1a64-fleet'].genesis === 'GENESIS', 'ALGS registry: 6 dialects, fleet genesis');
 
 // ---------- 13. zero-dependency + ESM static check ----------
 const src = readFileSync(join(HERE, 'stone.mjs'), 'utf8');
