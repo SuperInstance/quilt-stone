@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 import {
   fnv1a64, fnv1a64RawString, fnv1a64QuantString, sha256Hex, canonicalJSON,
-  rowHash, sealChain, verifyChain, detectAlg, stamp, ALGS,
+  rowHash, sealChain, verifyChain, detectAlg, stamp, ALGS, annotateTip,
 } from './stone.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -201,7 +201,62 @@ const pqSpliced = JSON.parse(PQ_FIXTURE);
 pqSpliced[2] = pqSpliced[3]; // duplicate a row: chain continuity must break
 ok(verifyChain(pqSpliced).ok === false, 'row-splice breaks the exporter chain (prev-link continuity enforced)');
 
-// ---------- 13. zero-dependency + ESM static check ----------
+// ---------- 13. v2 annotation rows (STONE-V2-PILOTS resolution, #2 comment) ----------
+// Rule: 'stone.*' kind ≠ 'stone.header' = annotation — self-hashed vs the
+// current tip, prev NEVER advances into it. Every byte stays tamper-evident.
+{
+  const rows = [
+    { kind: 'stone.header', alg: 'stone-v1', genesis: 'STONE-GENESIS-1' },
+    { kind: 'receipt', claim: 'a' },
+    { kind: 'receipt', claim: 'b' },
+  ];
+  sealChain(rows, undefined, { alg: 'stone-v1' });
+  const bodyTip = rows[2].row_hash;
+  annotateTip(rows, { kind: 'stone.sign', sig: 'ed25519:deadbeef', tip: bodyTip });
+  const v = verifyChain(rows);
+  ok(v.ok === true && v.links === 4, 'stapled stone.sign row verifies (downgrade-safe resolution 2)');
+  ok(v.tip === bodyTip, 'tip stays the BODY tip — prev never advances into an annotation');
+
+  const tampered = JSON.parse(JSON.stringify(rows));
+  tampered[3].sig = 'ed25519:cafeb0ba'; // post-seal edit of the annotation itself
+  const vt = verifyChain(tampered);
+  ok(vt.ok === false && vt.firstBadIndex === 3 && vt.why === 'annotation hash mismatch',
+    'edited annotation caught: annotation hash mismatch at the stapled row');
+
+  const mid = JSON.parse(JSON.stringify(rows.slice(0, 3)));
+  annotateTip(mid, { kind: 'stone.sign', sig: 'x' });
+  mid.push({ kind: 'receipt', claim: 'c' });
+  sealChain(mid, undefined, { alg: 'stone-v1' });
+  const vm = verifyChain(mid);
+  ok(vm.ok === true && vm.links === 5 && mid[4].row_hash !== undefined,
+    'mid-chain annotation: later body rows still link over it (prev skips the staple)');
+
+  const dbl = JSON.parse(JSON.stringify(rows));
+  annotateTip(dbl, { kind: 'stone.sign', sig: 'second staple' });
+  ok(verifyChain(dbl).ok === true, 'multiple annotations on one tip all verify');
+
+  const noHash = JSON.parse(JSON.stringify(rows));
+  delete noHash[3].row_hash;
+  const vnh = verifyChain(noHash);
+  ok(vnh.ok === false && vnh.firstBadIndex === 3,
+    'annotation without self-hash is a chain break (rows are never skipped)');
+
+  let threw = false;
+  try { annotateTip([{ kind: 'stone.header', alg: 'stone-v1' }], { kind: 'receipt', claim: 'not an annotation' }); }
+  catch { threw = true; }
+  ok(threw, 'annotateTip refuses non-stone.* kinds (body rows can never be laundered as annotations)');
+
+  // regression guard: annotation-free stone-v1 chains verify byte-identically
+  const plain = [
+    { kind: 'stone.header', alg: 'stone-v1', genesis: 'STONE-GENESIS-1' },
+    { kind: 'receipt', claim: 'a' },
+  ];
+  sealChain(plain, undefined, { alg: 'stone-v1' });
+  ok(verifyChain(plain).ok === true && detectAlg(plain) === 'stone-v1',
+    'annotation-free stone-v1 behavior unchanged (detection + verify)');
+}
+
+// ---------- 14. zero-dependency + ESM static check ----------
 const src = readFileSync(join(HERE, 'stone.mjs'), 'utf8');
 const imports = [...src.matchAll(/(?:^|\n)\s*import\s+[^'"]*from\s+['"]([^'"]+)['"]/g)].map((m) => m[1]);
 ok(imports.length > 0 && imports.every((p) => p.startsWith('node:')),
