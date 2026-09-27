@@ -29,7 +29,7 @@ House law: **a receipt without a chain is a rumor.**
 | `stone.mjs` | the canonical module: `fnv1a64`, `rowHash`, `sealChain`, `verifyChain`, `detectAlg`, `canonicalJSON`, `sha256Hex`, `stamp`, `ALGS` (6 dialects), `verifyChainFile` |
 | `STONE-SPEC.md` | the format spec: row kinds, field normalization, genesis conventions, exact serialization per dialect, verification contract, writer's checklist |
 | `verify_all.mjs` | THE CONFORMANCE RUN: discovers every chain in every sibling repo, verifies each with stone.mjs, cross-checks each verdict against the repo's OWN local verifier |
-| `smoke.mjs` | stone self-checks — seal/verify/tamper per dialect, canonical-JSON stability, detection, zero-dep static check (58/58) |
+| `smoke.mjs` | stone self-checks — seal/verify/tamper per dialect, canonical-JSON stability, detection, v2 annotation/signature staples, standards-draft tracking pins, zero-dep static check (85/85) |
 | `experiments/e_st1_conform.mjs` | the receipted conformance experiment — rules sealed first, results dogfooded into a stone-v1 chain written by stone.mjs itself |
 
 ## Dialects (legacy, verified as-found)
@@ -52,10 +52,19 @@ House law: **a receipt without a chain is a rumor.**
   row-splice caught at the exact row. A receipt without a chain is a rumor;
   an export without a verifier is noise.
 
+## Standards interop tracking
+
+STONE-SPEC §9 tracks the signed-agent-receipt ecosystem without claiming
+conformance: `draft-marques-asqav-compliance-receipts-07` (JCS [RFC 8785];
+Ed25519 mandatory, ES256, ML-DSA-65 [FIPS 204]), SCITT [RFC 9943] (formerly
+`draft-ietf-scitt-architecture`), and the house rule that a future export must
+not silently rename stone-v1 chain rows. Smoke pins make draft-number drift
+loud.
+
 ## Run it
 
 ```
-node smoke.mjs          # 58/58 self-checks
+node smoke.mjs          # 85/85 self-checks
 node verify_all.mjs     # conformance run over ../ (the whole record)
 ```
 

@@ -305,7 +305,7 @@ The chain's promise: **any edit to any sealed row, any deleted row, any
 reordered row, any renamed field, and any dialect mismatch is caught with the
 exact index of the first divergence.** Proven, not asserted — R3 of
 `e_st1_conform.mjs` seals a chain, mutates one row, and shows the verifier
-catch it; `smoke.mjs` does it per dialect (54/54).
+catch it; `smoke.mjs` does it per dialect (85/85).
 
 ## 8. Writer's checklist (every future experiment)
 
@@ -324,3 +324,28 @@ catch it; `smoke.mjs` does it per dialect (54/54).
 8. If you must extend a legacy dialect, name it: add it to `ALGS` in
    stone.mjs with its source-of-truth citation, exactly as fnv1a64-tidepool
    was. Never overload an existing dialect key with new semantics.
+
+---
+
+## 9. Standards interop tracking (IETF / SCITT compliance receipts)
+
+stone-v1 is the fleet's own receipt-chain format. It is **not** an IETF
+Compliance Receipt, and this section is a tracking lane, not a conformance
+claim. The interop surface to watch is the signed-agent-receipt ecosystem:
+
+- **Compliance Receipts profile:**
+  `draft-marques-asqav-compliance-receipts-07` (July 2026; expires
+  21 January 2027). It profiles signed action receipts with JCS
+  canonicalization ([RFC 8785]) and permits Ed25519 (mandatory-to-implement),
+  ES256, and **ML-DSA-65** ([FIPS 204]). Offline / air-gapped verification is
+  explicitly in scope for that ecosystem.
+- **SCITT:** [RFC 9943], *An Architecture for Trustworthy and Transparent
+  Digital Supply Chains* (Proposed Standard, June 2026; formerly
+  `draft-ietf-scitt-architecture`). A SCITT Transparent Statement can carry a
+  Compliance Receipt as its payload; inclusion-proof receipts are the SCITT
+  analogue of the chain-level receipt.
+- **House mapping:** a stone-v1 chain is the local tamper-evident prefix; a
+  future standards-facing export MUST keep wrapper fields outside the hashed
+  `stone.header` prefix (or define a new alg) rather than silently renaming
+  chain rows. Recheck this section whenever the Compliance Receipts draft
+  rev changes; the smoke pins make silent drift loud.
