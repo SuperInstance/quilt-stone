@@ -326,6 +326,58 @@ ok(verifyChain(pqSpliced).ok === false, 'row-splice breaks the exporter chain (p
   ok(rawOk, 'signed message is exactly "stone-v2" || tip_row_hash (domain separation pinned)');
 }
 
+// ---------- 13b. key provenance: binding != identity (AUDITOR-EXPERIENCE note 2) ----------
+{
+  const { generateKeyPairSync } = await import('node:crypto');
+  const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+  const body = [
+    { kind: 'stone.header', alg: 'stone-v1', genesis: 'STONE-GENESIS-1' },
+    { kind: 'receipt', claim: 'key-provenance class' },
+  ];
+  sealChain(body, undefined, { alg: 'stone-v1' });
+  signTip(body, privateKey, { key_id: 'producer-main', signer_role: 'producer' });
+
+  // No registry: binding valid, identity explicitly null — the honest default.
+  const bare = verifyTipSignature(body, publicKey);
+  ok(bare.ok === true && bare.identity === null && bare.binding_only === true,
+    'no trustedKeys registry: valid signature still reports identity=null, binding_only=true (binding != identity)');
+  ok(bare.signer.key_id === 'producer-main',
+    'signer.key_id remains the self-reported label (label is NOT identity)');
+
+  // Registry hit: the auditor\'s out-of-band key upgrades binding to identity.
+  const reg = new Map([['producer-main', publicKey]]);
+  const idd = verifyTipSignature(body, publicKey, { trustedKeys: reg });
+  ok(!!idd.identity && idd.identity.key_id === 'producer-main' &&
+     idd.identity.signer_role === 'producer' && idd.binding_only === false &&
+     idd.identity_claim_conflict === false,
+    'registry match upgrades binding to identity (key_id + signer_role from the SIGNATURE, registry only names the key)');
+
+  // Object-shaped registry works identically (auditor ergonomics).
+  const ido = verifyTipSignature(body, publicKey, { trustedKeys: { 'producer-main': publicKey } });
+  ok(!!ido.identity && ido.identity.key_id === 'producer-main',
+    'object-form trustedKeys registry upgrades identically');
+
+  // Key not registered: binding stays valid, identity null, claim flagged.
+  const stranger = generateKeyPairSync('ed25519');
+  const miss = verifyTipSignature(body, publicKey, { trustedKeys: new Map([['someone-else', stranger.publicKey]]) });
+  ok(miss.ok === true && miss.identity === null && miss.binding_only === true && miss.identity_claim_conflict === true,
+    'unregistered key: ok stays true (binding valid) but claimed key_id is NOT promoted — claim conflict named');
+
+  // Label laundering: sign row CLAIMS a registered key_id, but the signature
+  // was made by a DIFFERENT key. The auditor verifies with the real (wrong)
+  // key... so instead: claim matches registry text but the verifying key is
+  // the registered one under a different label — conflict must surface.
+  const reg2 = new Map([['casey', publicKey]]);
+  const conflict = verifyTipSignature(body, publicKey, { trustedKeys: reg2 });
+  ok(conflict.ok === true && !!conflict.identity && conflict.identity.key_id === 'casey' &&
+     conflict.identity_claim_conflict === true,
+    'registry label disagrees with sign-row key_id: identity follows the VERIFIED key, claim conflict named (label laundering caught)');
+
+  // FAIL-first anchor: the identity/binding_only fields exist at all.
+  ok('identity' in bare && 'binding_only' in bare && 'identity_claim_conflict' in bare,
+    'provenance fields present on every verifyTipSignature verdict (absent = seam missing)');
+}
+
 // ---------- 14. zero-dependency + ESM static check ----------
 const src = readFileSync(join(HERE, 'stone.mjs'), 'utf8');
 const imports = [...src.matchAll(/(?:^|\n)\s*import\s+[^'"]*from\s+['"]([^'"]+)['"]/g)].map((m) => m[1]);
