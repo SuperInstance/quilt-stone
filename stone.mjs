@@ -207,6 +207,19 @@ export const ALGS = {
       return sha256Hex(canonicalJSON([prev, withoutKeys(row, ['row_hash'])]));
     },
     setLinks(row, prev, hash) { row.row_hash = hash; },
+    // v2 ANNOTATION ROWS (STONE-V2-PILOTS resolution, quilt-stone#2 comment):
+    // a row whose kind is 'stone.*' but NOT 'stone.header' is an annotation
+    // (e.g. the stapled 'stone.sign' tip signature). It carries a SELF-HASH
+    // computed with the CURRENT tip as prev — but prev NEVER advances past
+    // it, so the annotation sits OUTSIDE the hashed prefix while every byte
+    // of it stays tamper-evident (an edited annotation breaks its own
+    // self-hash). Body rows never use 'stone.*' kinds, so the split is
+    // unambiguous. Downgrade-safe: a v1-only verifier sees a valid chain
+    // plus trailing self-hashed rows it cannot explain — never a silent lie.
+    isAnnotation(row) {
+      return typeof row.kind === 'string' &&
+        row.kind.startsWith('stone.') && row.kind !== 'stone.header';
+    },
   },
 };
 
@@ -287,8 +300,36 @@ export function sealChain(rows, genesis, opts) {
   for (const r of rows) {
     const h = alg.hashOf(r, prev);
     alg.setLinks(r, prev, h);
-    prev = h;
+    // Annotation rows are self-hashed against the current tip but the tip
+    // does NOT advance — the chain's prev never points into an annotation.
+    if (!alg.isAnnotation?.(r)) prev = h;
   }
+  return rows;
+}
+
+// annotateTip(rows, annotation, opts?) -> rows (mutated, returned). Appends a
+// v2 ANNOTATION row (STONE-SPEC §4.6, STONE-V2-PILOTS): the row is self-hashed
+// against the chain's current tip and prev never advances into it. The
+// annotation object must carry kind:'stone.*' (≠ 'stone.header') — e.g.
+// { kind:'stone.sign', sig:'...' } for the stapled tip signature. Returns rows.
+export function annotateTip(rows, annotation, opts) {
+  const algKey = opts?.alg ?? 'stone-v1';
+  const alg = ALGS[algKey];
+  if (!alg) throw new Error(`stone: unknown alg '${algKey}'`);
+  if (!alg.isAnnotation) throw new Error(`stone: alg '${algKey}' has no annotation rule`);
+  if (!alg.isAnnotation(annotation)) {
+    throw new Error("stone: annotation rows must have kind 'stone.*' (≠ 'stone.header')");
+  }
+  // Resolve the live tip WITHOUT trusting stored row_hash values: re-derive
+  // by walking the chain, skipping annotations exactly like the verifier.
+  let prev = opts?.genesis ?? alg.genesis;
+  for (const r of rows) {
+    if (alg.isAnnotation(r)) continue;
+    prev = alg.hashOf(r, prev);
+  }
+  const row = { ...annotation };
+  row[alg.hashField] = alg.hashOf(row, prev);
+  rows.push(row);
   return rows;
 }
 
@@ -329,9 +370,11 @@ export function verifyChain(rows, genesis, opts) {
     }
     const want = alg.hashOf(r, prev);
     if (want !== r[hf]) {
-      return { ok: false, firstBadIndex: i, at: r.seq ?? null, why: 'hash mismatch', ...base, tip: i > 0 ? prev : null };
+      const annotation = alg.isAnnotation?.(r) === true;
+      return { ok: false, firstBadIndex: i, at: r.seq ?? null, why: annotation ? 'annotation hash mismatch' : 'hash mismatch', ...base, tip: i > 0 ? prev : null };
     }
-    prev = r[hf];
+    // Annotation rows verify but never advance the tip (see ALGS['stone-v1']).
+    if (!alg.isAnnotation?.(r)) prev = r[hf];
   }
   return { ok: true, firstBadIndex: null, at: null, why: null, ...base, tip: rows.length > 0 ? prev : null };
 }

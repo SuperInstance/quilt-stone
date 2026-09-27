@@ -199,6 +199,26 @@ New chains MUST write stone-v1:
   strings or as JSON numbers with receipted formatting — but exact integers
   are the house style).
 
+#### 4.6.1 v2 annotation rows (STONE-V2-PILOTS resolution)
+
+A row whose `kind` is `stone.*` but NOT `stone.header` (e.g. the stapled
+`stone.sign` tip signature from STONE-V2-PILOTS) is an **annotation**:
+
+- It carries a SELF-HASH computed exactly like a body row against the
+  chain's current tip — but **prev never advances into it**. The annotation
+  sits outside the hashed prefix while every byte of it stays
+  tamper-evident (an edited annotation breaks `annotation hash mismatch`).
+- Body rows never use `stone.*` kinds, so the split is unambiguous;
+  `annotateTip(rows, {kind:'stone.sign', ...})` is the canonical stapler.
+- Downgrade safety, verified by running: the design's literal "no row_hash"
+  staple FAILED v1 verify (`missing row_hash`) — see the quilt-stone#2
+  comment. Under this rule a v1-only verifier either accepts a trailing
+  self-hashed staple (tip confusion only, never a silent lie) or, for
+  mid-chain staples, rejects at the next body row — both loud, never quiet.
+- Non-goal kept: hash-linking a signature like a normal row (signature on
+  the inside) remains forbidden — that is the regressive case the design
+  already forbids.
+
 ## 5. THE SERIALIZATION — where cross-repo chains break
 
 The single most fragile point of the whole record: **what byte string does
