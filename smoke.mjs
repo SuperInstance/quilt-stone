@@ -389,5 +389,24 @@ ok(pkg.type === 'module' && pkg.dependencies === undefined && pkg.devDependencie
   'package.json: type=module, zero deps');
 ok(/^\s*import\s/m.test(src) && /\bexport\s+(function|const)/.test(src), 'ESM syntax present (static import + export)');
 
+// ---------- 15. standards interop tracking pins (IETF / SCITT) ----------
+// STONE-SPEC §9 is the tracking lane for the signed-agent-receipt ecosystem.
+// These pins make draft-number drift loud instead of a quiet doc edit.
+const specSrc = readFileSync(join(HERE, 'STONE-SPEC.md'), 'utf8');
+const readmeSrc = readFileSync(join(HERE, 'README.md'), 'utf8');
+ok(/## 9\. Standards interop tracking/.test(specSrc),
+  'STONE-SPEC carries the standards interop tracking section');
+ok(specSrc.includes('draft-marques-asqav-compliance-receipts-07'),
+  'Compliance Receipts profile draft is pinned to -07');
+ok(specSrc.includes('[RFC 8785]') && specSrc.includes('Ed25519') &&
+   specSrc.includes('ES256') && specSrc.includes('ML-DSA-65') && specSrc.includes('[FIPS 204]'),
+  'Compliance Receipts normative anchors pinned: JCS/RFC8785, Ed25519, ES256, ML-DSA-65/FIPS204');
+ok(specSrc.includes('[RFC 9943]') && specSrc.includes('draft-ietf-scitt-architecture'),
+  'SCITT anchor pinned: RFC 9943 with former draft-ietf-scitt-architecture name');
+ok(readmeSrc.includes('draft-marques-asqav-compliance-receipts-07') && readmeSrc.includes('[RFC 9943]'),
+  'README names the same Compliance Receipts draft and SCITT RFC (no doc drift)');
+ok(specSrc.includes('wrapper fields outside the hashed') && specSrc.includes('rather than silently renaming'),
+  'house mapping pinned: future exports wrap outside the hashed prefix, never silently rename stone rows');
+
 console.log(bad === 0 ? `\nSMOKE GREEN: ${n}/${n} checks pass` : `\nSMOKE RED: ${bad}/${n} checks FAIL`);
 process.exit(bad === 0 ? 0 : 1);
