@@ -337,5 +337,18 @@ ok(pkg.type === 'module' && pkg.dependencies === undefined && pkg.devDependencie
   'package.json: type=module, zero deps');
 ok(/^\s*import\s/m.test(src) && /\bexport\s+(function|const)/.test(src), 'ESM syntax present (static import + export)');
 
+// ---------- 15. auditor-experience doc pins ----------
+// docs/AUDITOR-EXPERIENCE.md must stay a real field report: every verdict
+// string it quotes must be reproducible by running stone.mjs itself.
+const AUD = readFileSync(join(HERE, 'docs', 'AUDITOR-EXPERIENCE.md'), 'utf8');
+ok(AUD.includes('signTip') && AUD.includes('verifyTipSignature(rows, pub)'),
+  'auditor doc audits through verifyTipSignature (not the producer self-report)');
+ok(AUD.includes('signed tip does not match the chain tip (post-signature chain edit)'),
+  'auditor doc quotes the real laundering-refusal verdict string');
+ok(AUD.includes('wrapper is not evidence') || AUD.includes('The wrapper is not evidence'),
+  'auditor doc pins the wrapper-is-not-evidence honesty rule');
+ok(/pong-quilt#51/.test(AUD) && /07384ac2/.test(AUD),
+  'auditor doc names its provenance (pong-quilt#51 pilot, merge 07384ac2)');
+
 console.log(bad === 0 ? `\nSMOKE GREEN: ${n}/${n} checks pass` : `\nSMOKE RED: ${bad}/${n} checks FAIL`);
 process.exit(bad === 0 ? 0 : 1);
