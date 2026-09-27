@@ -43,6 +43,15 @@ House law: **a receipt without a chain is a rumor.**
 | `fnv1a64-tidepool` | quilt-playtest (discovered 26-b) | quant's math but seq OUTSIDE the hash |
 | `stone-v1` | **new chains** | sha256 over canonical JSON + mandatory `stone.header` row, genesis `STONE-GENESIS-1` |
 
+## Forward-format adopters
+
+- **pong-quilt** — Round 36 (`tools/wal-export.js` `toStoneV1()`) seals its
+  receipt-panel WAL in stone-v1, produced live and cited in-repo at
+  `SuperInstance/pong-quilt` PR #46 (merged 2026-09-27). Smoke section 12b
+  pins the exporter's real output: verifies under `stone.mjs`, tamper and
+  row-splice caught at the exact row. A receipt without a chain is a rumor;
+  an export without a verifier is noise.
+
 ## Run it
 
 ```
