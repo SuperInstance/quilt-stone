@@ -176,6 +176,31 @@ const s = stamp('st');
 ok(/^st_[0-9a-z]+_[0-9a-z]+$/.test(s), 'stamp(prefix) format');
 ok(Object.keys(ALGS).length === 6 && ALGS['fnv1a64-fleet'].genesis === 'GENESIS', 'ALGS registry: 6 dialects, fleet genesis');
 
+// ---------- 12b. forward-format adopter: pong-quilt R36 (SuperInstance/pong-quilt PR #46) ----------
+// The first fleet sibling to WRITE stone-v1 from its own exporter:
+// pong-quilt's tools/wal-export.js toStoneV1() seals its receipt-panel WAL
+// in the forward format (sha256/canonical + mandatory stone.header row).
+// Fixture below is the exporter's REAL output, generated live by requiring
+// pong-quilt's tools/wal-export.js at PR #46's merge tip — not retyped.
+// Weight-law citation: this in-repo cite names the producing repo + PR.
+const PQ_FIXTURE = "[{\"kind\":\"stone.header\",\"alg\":\"stone-v1\",\"genesis\":\"STONE-GENESIS-1\",\"tool\":\"pong-quilt\",\"source\":\"quilt-stone smoke fixture — produced by pong-quilt R36 toStoneV1 (SuperInstance/pong-quilt PR #46)\",\"row_hash\":\"0901bfc431230fe7c3d57847a956f4770c1ff076000b33f3165e5b0fa333757a\"},{\"kind\":\"pq/wal-op\",\"seq\":1,\"op\":\"LINK\",\"cell\":\"pq/receipt\",\"args\":{\"kind\":\"L2\",\"move\":1,\"conf\":0.42,\"gen\":0},\"row_hash\":\"a4f4b006a2b4d8d6ad22446339d419475c2c68d1af7a7e2b462f73dc62cd0a6b\"},{\"kind\":\"pq/wal-op\",\"seq\":2,\"op\":\"LINK\",\"cell\":\"pq/receipt\",\"args\":{\"kind\":\"DEATH\",\"move\":0,\"conf\":0,\"gen\":3},\"row_hash\":\"f40d76a4207e3a5ff43e3091ef637b4043933fee7d8db18766753b3d22cd5027\"},{\"kind\":\"pq/wal-op\",\"seq\":3,\"op\":\"LINK\",\"cell\":\"pq/receipt\",\"args\":{\"kind\":\"QA-REFUSAL\",\"move\":0,\"conf\":0,\"gen\":3},\"row_hash\":\"377c6b54ee476855b6b03e1d45be75fbc86a261aeb141455af5850fa6b96b62f\"},{\"kind\":\"pq/wal-op\",\"seq\":4,\"op\":\"VIEW\",\"cell\":\"pq/projection/eviction\",\"args\":{\"shown\":3,\"evicted\":41},\"row_hash\":\"99b2d0a6c848feb429b39d0696212ebc5906603983c47f9b6b6bed3fec6dd5de\"}]"; // exact exporter bytes
+const pqChain = JSON.parse(PQ_FIXTURE);
+const pqV = verifyChain(pqChain);
+ok(pqV.ok === true && pqV.alg === 'stone-v1' && pqV.genesis === 'STONE-GENESIS-1' && pqV.links === 5,
+  'pong-quilt R36 exporter output verifies under stone-v1 (alg/genesis/links canonical)');
+ok(pqChain[0].kind === 'stone.header' && pqChain[0].tool === 'pong-quilt',
+  'fixture header row is the mandatory stone.header, tool=pong-quilt (producer named, not laundered)');
+ok(pqV.tip === pqChain[pqChain.length - 1].row_hash,
+  'tip = last exporter row hash');
+const pqTampered = JSON.parse(PQ_FIXTURE);
+pqTampered[4].args.evicted = 42; // post-seal content edit
+const pqT = verifyChain(pqTampered);
+ok(pqT.ok === false && pqT.firstBadIndex === 4 && pqT.why === 'hash mismatch',
+  'tampered exporter chain caught: hash mismatch at the edited row, never fake green');
+const pqSpliced = JSON.parse(PQ_FIXTURE);
+pqSpliced[2] = pqSpliced[3]; // duplicate a row: chain continuity must break
+ok(verifyChain(pqSpliced).ok === false, 'row-splice breaks the exporter chain (prev-link continuity enforced)');
+
 // ---------- 13. zero-dependency + ESM static check ----------
 const src = readFileSync(join(HERE, 'stone.mjs'), 'utf8');
 const imports = [...src.matchAll(/(?:^|\n)\s*import\s+[^'"]*from\s+['"]([^'"]+)['"]/g)].map((m) => m[1]);
