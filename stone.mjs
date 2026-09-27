@@ -22,7 +22,7 @@
 //   fnv1a64-quant    quilt-quant (discovered by the Task 26-b sweep)
 //   stone-v1         NEW chains only: header row + canonical serialization.
 
-import { createHash, sign, verify } from 'node:crypto';
+import { createHash, createPublicKey, sign, verify } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 // ============================================================================
@@ -438,20 +438,33 @@ function edVerify(msg, sig, pub) {
   }
 }
 
-// verifyTipSignature(rows, publicKey, opts?) -> { ok, why, tip, signer }.
-// The auditor entry point (success receipt of STONE-V2-PILOTS): re-derives the
-// body tip WITHOUT trusting stored hashes, binds the last stapled 'stone.sign'
-// row to it (stored tip field must equal the derived tip), then verifies the
-// ed25519 signature over '"stone-v2" || tip'. This closes the gap between
-// "chain verifies" and "this exact byte string was signed by the producer
-// key": a chain edited after signing re-seals into self-consistent hashes,
-// but the signature still names the OLD tip (R22 P3-process lie class, at
-// rest). ok:false verdicts name why: no stapled row / unsupported alg / no
-// body rows / signed-tip mismatch / signature invalid for this key.
+// verifyTipSignature(rows, publicKey, opts?) -> { ok, why, tip, signer,
+// identity, binding_only }. The auditor entry point (success receipt of
+// STONE-V2-PILOTS): re-derives the body tip WITHOUT trusting stored hashes,
+// binds the last stapled 'stone.sign' row to it (stored tip field must equal
+// the derived tip), then verifies the ed25519 signature over '"stone-v2" ||
+// tip'. This closes the gap between "chain verifies" and "this exact byte
+// string was signed by the producer key": a chain edited after signing
+// re-seals into self-consistent hashes, but the signature still names the
+// OLD tip (R22 P3-process lie class, at rest). ok:false verdicts name why:
+// no stapled row / unsupported alg / no body rows / signed-tip mismatch /
+// signature invalid for this key.
+//
+// KEY PROVENANCE (AUDITOR-EXPERIENCE.md note 2 — binding != identity): an
+// embedded public key establishes only BINDING (one key signed this tip
+// continuously), never IDENTITY ("Casey signed it"). opts.trustedKeys is the
+// auditor's out-of-band key-id registry (Map or object: key_id -> publicKey).
+// When provided and the verifying key matches a registered entry, the result
+// upgrades: identity = { key_id, signer_role }. When the sign row's CLAIMED
+// key_id maps to a DIFFERENT key (identity laundering by label), or the key
+// matches no registry entry, ok stays true (the binding IS valid) but
+// identity is null and binding_only is true — the claimed label is NEVER
+// promoted to identity on binding alone. Without a registry the result is
+// binding_only by definition.
 export function verifyTipSignature(rows, publicKey, opts) {
   const algKey = opts?.alg ?? 'stone-v1';
   const alg = ALGS[algKey];
-  const fail = (why) => ({ ok: false, why, tip: null, signer: null });
+  const fail = (why) => ({ ok: false, why, tip: null, signer: null, identity: null, binding_only: true });
   if (!alg) return fail(`unknown alg '${algKey}'`);
   if (!alg.isAnnotation) return fail(`alg '${algKey}' has no annotation rule`);
   let signIdx = -1;
@@ -469,10 +482,42 @@ export function verifyTipSignature(rows, publicKey, opts) {
   try { good = edVerify(msg, Buffer.from(signRow.sig, 'hex'), publicKey); }
   catch { good = false; }
   if (!good) return fail('signature invalid for this tip and key');
-  return {
-    ok: true, why: null, tip,
-    signer: { alg: 'ed25519', key_id: signRow.key_id ?? null, signer_role: signRow.signer_role ?? null },
-  };
+  const signer = { alg: 'ed25519', key_id: signRow.key_id ?? null, signer_role: signRow.signer_role ?? null };
+  // binding -> identity upgrade against the auditor's out-of-band registry.
+  let identity = null;
+  let binding_only = true;
+  let identity_claim_conflict = false;
+  const reg = opts?.trustedKeys;
+  if (reg) {
+    let verifiedKeyId = null;
+    let pubDer = null;
+    const derOf = (k) => {
+      try {
+        // node >= 22 rejects createPublicKey on an existing public KeyObject
+        const pub = (k && k.type === 'public') ? k : createPublicKey(k);
+        return pub.export({ format: 'der', type: 'spki' });
+      } catch { return null; }
+    };
+    pubDer = derOf(publicKey);
+    const entries = reg instanceof Map ? reg.entries() : Object.entries(reg);
+    for (const [kid, regPub] of entries) {
+      const regDer = derOf(regPub);
+      if (pubDer && regDer && regDer.equals(pubDer)) { verifiedKeyId = kid; break; }
+    }
+    if (verifiedKeyId !== null) {
+      identity = { key_id: verifiedKeyId, signer_role: signer.signer_role };
+      binding_only = false;
+      // the signature block's own key_id label must agree with the registry
+      // match — a labeled key that ISN'T the registered key under that label
+      // is identity laundering, caught even when the label text matches.
+      if (signer.key_id !== null && signer.key_id !== verifiedKeyId) identity_claim_conflict = true;
+    } else if (signer.key_id !== null) {
+      // claimed key_id matched no registered key: the claim is unproven.
+      // binding stays valid; the label is explicitly NOT promoted.
+      identity_claim_conflict = true;
+    }
+  }
+  return { ok: true, why: null, tip, signer, identity, binding_only, identity_claim_conflict };
 }
 
 // verifyChainFile(path, opts?) — read a JSONL chain file and verify it.
