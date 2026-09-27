@@ -22,7 +22,7 @@
 //   fnv1a64-quant    quilt-quant (discovered by the Task 26-b sweep)
 //   stone-v1         NEW chains only: header row + canonical serialization.
 
-import { createHash } from 'node:crypto';
+import { createHash, sign, verify } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 // ============================================================================
@@ -377,6 +377,102 @@ export function verifyChain(rows, genesis, opts) {
     if (!alg.isAnnotation?.(r)) prev = r[hf];
   }
   return { ok: true, firstBadIndex: null, at: null, why: null, ...base, tip: rows.length > 0 ? prev : null };
+}
+
+// ============================================================================
+// 3b. V2 TIP SIGNATURES (STONE-V2-PILOTS first sign lane)
+// ============================================================================
+
+// bodyTip(rows, alg): the hash of the last NON-ANNOTATION row, re-derived by
+// walking the chain from genesis — never trusting a stored tip or row_hash.
+function bodyTip(rows, alg) {
+  let prev = alg.genesis;
+  let seen = false;
+  for (const r of rows) {
+    if (!r || typeof r !== 'object' || alg.isAnnotation(r)) continue;
+    prev = alg.hashOf(r, prev);
+    seen = true;
+  }
+  return seen ? prev : null;
+}
+
+// signTip(rows, privateKey, opts?) -> rows (mutated, returned). Staples an
+// ed25519 signature on the chain's BODY tip as a 'stone.sign' ANNOTATION row
+// (STONE-V2-PILOTS): the signed message is the domain-separated string
+// "stone-v2" || tip_row_hash; the row itself carries
+//   { kind:'stone.sign', alg:'ed25519', key_id?, signer_role?, tip, sig }
+// — the signature block names its own key id, algorithm, and signer role
+// (genesis convention unchanged: STONE-GENESIS-1), and the stored `tip` field
+// binds the signature to the exact chain it staples. privateKey is a
+// node:crypto ed25519 private KeyObject (or PEM/DER string). Keys live with
+// the PRODUCER — one key per producer repo, never fleet-wide (a leaked key
+// elsewhere must not be able to re-sign this repo's artifacts).
+export function signTip(rows, privateKey, opts) {
+  const algKey = opts?.alg ?? 'stone-v1';
+  const alg = ALGS[algKey];
+  if (!alg) throw new Error(`stone: unknown alg '${algKey}'`);
+  if (!alg.isAnnotation) throw new Error(`stone: alg '${algKey}' has no annotation rule`);
+  const tip = bodyTip(rows, alg);
+  if (tip === null) throw new Error('stone: cannot sign an empty chain (no body rows)');
+  const msg = Buffer.concat([Buffer.from('stone-v2', 'utf8'), Buffer.from(tip, 'utf8')]);
+  const sig = sign(null, msg, privateKey).toString('hex');
+  return annotateTip(rows, {
+    kind: 'stone.sign',
+    alg: 'ed25519',
+    key_id: opts?.key_id,
+    signer_role: opts?.signer_role,
+    tip,
+    sig,
+  }, opts);
+}
+
+// edVerify(msg, sig, pub): one-shot ed25519 verify across runtime dialects.
+// Node's documented order is verify(null, data, signature, key); some fleet
+// runtimes bind verify(null, data, key, signature) — both are tried, the
+// arg-type error is the discriminator (detected by running, pinned in smoke).
+function edVerify(msg, sig, pub) {
+  try { return verify(null, msg, sig, pub); }
+  catch (e) {
+    if (e && e.code === 'ERR_INVALID_ARG_TYPE') return verify(null, msg, pub, sig);
+    throw e;
+  }
+}
+
+// verifyTipSignature(rows, publicKey, opts?) -> { ok, why, tip, signer }.
+// The auditor entry point (success receipt of STONE-V2-PILOTS): re-derives the
+// body tip WITHOUT trusting stored hashes, binds the last stapled 'stone.sign'
+// row to it (stored tip field must equal the derived tip), then verifies the
+// ed25519 signature over '"stone-v2" || tip'. This closes the gap between
+// "chain verifies" and "this exact byte string was signed by the producer
+// key": a chain edited after signing re-seals into self-consistent hashes,
+// but the signature still names the OLD tip (R22 P3-process lie class, at
+// rest). ok:false verdicts name why: no stapled row / unsupported alg / no
+// body rows / signed-tip mismatch / signature invalid for this key.
+export function verifyTipSignature(rows, publicKey, opts) {
+  const algKey = opts?.alg ?? 'stone-v1';
+  const alg = ALGS[algKey];
+  const fail = (why) => ({ ok: false, why, tip: null, signer: null });
+  if (!alg) return fail(`unknown alg '${algKey}'`);
+  if (!alg.isAnnotation) return fail(`alg '${algKey}' has no annotation rule`);
+  let signIdx = -1;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (alg.isAnnotation(rows[i]) && rows[i].kind === 'stone.sign') { signIdx = i; break; }
+  }
+  if (signIdx < 0) return fail('no stone.sign row stapled');
+  const signRow = rows[signIdx];
+  if (signRow.alg !== 'ed25519') return fail(`unsupported signature alg '${signRow.alg}'`);
+  const tip = bodyTip(rows.slice(0, signIdx), alg);
+  if (tip === null) return fail('no body rows before the stone.sign row');
+  if (signRow.tip !== tip) return fail('signed tip does not match the chain tip (post-signature chain edit)');
+  const msg = Buffer.concat([Buffer.from('stone-v2', 'utf8'), Buffer.from(tip, 'utf8')]);
+  let good = false;
+  try { good = edVerify(msg, Buffer.from(signRow.sig, 'hex'), publicKey); }
+  catch { good = false; }
+  if (!good) return fail('signature invalid for this tip and key');
+  return {
+    ok: true, why: null, tip,
+    signer: { alg: 'ed25519', key_id: signRow.key_id ?? null, signer_role: signRow.signer_role ?? null },
+  };
 }
 
 // verifyChainFile(path, opts?) — read a JSONL chain file and verify it.

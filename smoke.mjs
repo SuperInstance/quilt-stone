@@ -8,6 +8,7 @@ import { join, dirname } from 'node:path';
 import {
   fnv1a64, fnv1a64RawString, fnv1a64QuantString, sha256Hex, canonicalJSON,
   rowHash, sealChain, verifyChain, detectAlg, stamp, ALGS, annotateTip,
+  signTip, verifyTipSignature,
 } from './stone.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -254,6 +255,75 @@ ok(verifyChain(pqSpliced).ok === false, 'row-splice breaks the exporter chain (p
   sealChain(plain, undefined, { alg: 'stone-v1' });
   ok(verifyChain(plain).ok === true && detectAlg(plain) === 'stone-v1',
     'annotation-free stone-v1 behavior unchanged (detection + verify)');
+}
+
+// ---------- 13b. v2 tip signatures: sign + auditor verify (STONE-V2-PILOTS) ----------
+{
+  const { generateKeyPairSync } = await import('node:crypto');
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const body = [
+    { kind: 'stone.header', alg: 'stone-v1', genesis: 'STONE-GENESIS-1' },
+    { kind: 'receipt', claim: 'birth-seal class' },
+    { kind: 'receipt', claim: 'pong-quilt R37 shape' },
+  ];
+  sealChain(body, undefined, { alg: 'stone-v1' });
+  const bodyTip = body[2].row_hash;
+  signTip(body, privateKey, { key_id: 'pq-prerun-smoke', signer_role: 'producer' });
+
+  const v = verifyChain(body);
+  ok(v.ok === true && v.links === 4 && v.tip === bodyTip,
+    'signed chain still verifies; tip stays the BODY tip under the staple');
+  const s = verifyTipSignature(body, publicKey);
+  ok(s.ok === true && s.tip === bodyTip &&
+     s.signer.alg === 'ed25519' && s.signer.key_id === 'pq-prerun-smoke' && s.signer.signer_role === 'producer',
+    'auditor verifies: signature block names alg/key_id/signer_role, tip binds');
+
+  // The R22 P3-process gap, closed: post-signature body edit, re-sealed into
+  // a fully self-consistent chain, then the OLD signature re-stapled onto the
+  // new tip (the at-rest laundering attack). Chain verify PASSES — the
+  // signature is what catches it.
+  const edited = body.slice(0, 3).map((r) => { const c = { ...r }; delete c.row_hash; return c; });
+  edited[1].claim = 'edited after signing';
+  sealChain(edited, undefined, { alg: 'stone-v1' });
+  const laundered = [...edited, { ...body[3] }];
+  delete laundered[3].row_hash;
+  const newTip = edited[2].row_hash;
+  laundered[3].row_hash = sha256Hex(canonicalJSON([newTip, (({ row_hash, ...rest }) => rest)(laundered[3])]));
+  ok(verifyChain(laundered).ok === true,
+    'laundered chain (post-edit re-seal + old signature re-stapled) still verifies — hashes alone cannot catch this');
+  const sl = verifyTipSignature(laundered, publicKey);
+  ok(sl.ok === false && sl.why === 'signed tip does not match the chain tip (post-signature chain edit)',
+    'the signature catches it: signed tip names the pre-edit tip');
+
+  const wrongKey = generateKeyPairSync('ed25519').publicKey;
+  const sw = verifyTipSignature(body, wrongKey);
+  ok(sw.ok === false && sw.why === 'signature invalid for this tip and key',
+    'wrong public key refused');
+
+  const unsigned = [
+    { kind: 'stone.header', alg: 'stone-v1', genesis: 'STONE-GENESIS-1' },
+    { kind: 'receipt', claim: 'x' },
+  ];
+  sealChain(unsigned, undefined, { alg: 'stone-v1' });
+  const sn = verifyTipSignature(unsigned, publicKey);
+  ok(sn.ok === false && sn.why === 'no stone.sign row stapled',
+    'unsigned chain names its absence (never faked green)');
+
+  let threwEmpty = false;
+  try { signTip([{ kind: 'stone.header', alg: 'stone-v1' }].filter(() => false).concat([]), privateKey); }
+  catch { threwEmpty = true; }
+  ok(threwEmpty, 'signing an empty (body-less) chain throws');
+
+  // byte-level: the signed message is exactly "stone-v2" || tip_row_hash
+  const msg = Buffer.concat([Buffer.from('stone-v2', 'utf8'), Buffer.from(bodyTip, 'utf8')]);
+  const { verify: nodeVerify } = await import('node:crypto');
+  let rawOk = false;
+  try { rawOk = nodeVerify(null, msg, Buffer.from(body[3].sig, 'hex'), publicKey); }
+  catch (e) {
+    if (e && e.code === 'ERR_INVALID_ARG_TYPE') rawOk = nodeVerify(null, msg, publicKey, Buffer.from(body[3].sig, 'hex'));
+    else throw e;
+  }
+  ok(rawOk, 'signed message is exactly "stone-v2" || tip_row_hash (domain separation pinned)');
 }
 
 // ---------- 14. zero-dependency + ESM static check ----------

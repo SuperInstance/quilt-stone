@@ -219,6 +219,31 @@ A row whose `kind` is `stone.*` but NOT `stone.header` (e.g. the stapled
   the inside) remains forbidden — that is the regressive case the design
   already forbids.
 
+#### 4.6.2 v2 tip signatures — the first sign lane (STONE-V2-PILOTS)
+
+`signTip(rows, privateKey, {key_id, signer_role})` staples an ed25519
+signature on the chain's **body tip** as a `stone.sign` annotation row;
+`verifyTipSignature(rows, publicKey)` is the auditor entry point.
+
+- Signed message: the domain-separated `"stone-v2" || tip_row_hash` —
+  pinned byte-level in smoke.
+- The signature block names its own **key id, algorithm, and signer role**;
+  genesis convention unchanged (`STONE-GENESIS-1`).
+- The stored `tip` field binds the signature to the exact chain it
+  staples. A chain edited after signing re-seals into self-consistent
+  hashes (hash-verify PASSES — pinned in smoke as the laundering case),
+  but the signature still names the OLD tip and
+  `verifyTipSignature` refuses: `signed tip does not match the chain tip`.
+  This closes the R22 P3-process gap at rest: "chain verifies" now
+  implies "this exact byte string was signed by the producer key."
+- **Key separation is per producer repo, never fleet-wide** (a leaked key
+  elsewhere must not be able to re-sign this repo's artifacts). No
+timestamp authority (WAL sequence is the clock), no key registry yet —
+  the auditor experience report feeds Task 26-d.
+- Node runtime note: one-shot `verify` arg order differs across fleet
+  runtimes; `edVerify` tries the documented order and falls back on the
+  arg-type error (detected by running, pinned in smoke).
+
 ## 5. THE SERIALIZATION — where cross-repo chains break
 
 The single most fragile point of the whole record: **what byte string does
