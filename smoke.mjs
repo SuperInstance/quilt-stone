@@ -326,6 +326,55 @@ ok(verifyChain(pqSpliced).ok === false, 'row-splice breaks the exporter chain (p
   ok(rawOk, 'signed message is exactly "stone-v2" || tip_row_hash (domain separation pinned)');
 }
 
+
+// ---------- 13c. sign-lane adopter: pong-quilt R39 (SuperInstance/pong-quilt PR #51) ----------
+// The first fleet sibling to STAPLE a producer ed25519 signature on its own
+// stone chain: pong-quilt's tools/prerun.js signs the birth-seal chain's tip
+// (verifyTipSignature BEFORE write; unsigned stone-v1.json stays canonical;
+// QUILT_STONE_SIGN_KEY names the producer PEM; SIGN/REFUSED exit 1).
+// Fixture below is the producer's REAL output — tools/prerun.js at PR #52's
+// merge tip (carries PR #51), QUILT_STONE_DIR naming this checkout, generated
+// live, not retyped. The committed PEM is the producer-published verifying
+// key carried in the pilot wrapper's key.public block.
+const PQ_SIGN_FIXTURE = "[{\"kind\":\"stone.header\",\"alg\":\"stone-v1\",\"genesis\":\"STONE-GENESIS-1\",\"tool\":\"pong-quilt\",\"source\":\"tools/prerun.js canonical checkpoint seal (Round 37)\",\"row_hash\":\"e686dbef4a277915b6a94c4003b1717d8f555e30440c01ca91c037466bb8eb5f\"},{\"kind\":\"pq/wal-op\",\"seq\":1,\"op\":\"LINK\",\"cell\":\"pq/prerun-checkpoint\",\"args\":{\"file\":\"curve.json\",\"md5\":\"63617065d33068159e86e77da9181a61\"},\"row_hash\":\"048df9a91eed63b08d5984ad5541e848c46ee8ee82e202f98ffec1a109df67d8\"},{\"kind\":\"pq/wal-op\",\"seq\":2,\"op\":\"LINK\",\"cell\":\"pq/prerun-checkpoint\",\"args\":{\"file\":\"level0.js\",\"md5\":\"8a49b0f659b572d5ba6943bcabbbe082\"},\"row_hash\":\"f2a91475f63089d03ab68fad16d8de06d93e32948a868eb21e645398672b67f9\"},{\"kind\":\"pq/wal-op\",\"seq\":3,\"op\":\"LINK\",\"cell\":\"pq/prerun-checkpoint\",\"args\":{\"file\":\"level1.js\",\"md5\":\"643bd132d51f3fd2f08c0054b48967ae\"},\"row_hash\":\"332ff37beb9cf75f78a90ed763e2f4d7c2fdbb507cb37cceb49fa9b3d5e3234d\"},{\"kind\":\"pq/wal-op\",\"seq\":4,\"op\":\"LINK\",\"cell\":\"pq/prerun-checkpoint\",\"args\":{\"file\":\"level2.js\",\"md5\":\"454511548f9224f9302c106abd9313d0\"},\"row_hash\":\"ffe8abd842162d717ff274fdd3c21c58622df9ede534f6b540f2ae16b69f5503\"},{\"kind\":\"stone.sign\",\"alg\":\"ed25519\",\"key_id\":\"pq-prerun-sign-pilot\",\"signer_role\":\"producer\",\"tip\":\"ffe8abd842162d717ff274fdd3c21c58622df9ede534f6b540f2ae16b69f5503\",\"sig\":\"4c1e357b7ce73f267c2dd46e7428b129a928633f3d20b9f0ac321dae62ed13e944224b2a613d070a9803544fe7540e9d0eaf9603750e373b364a4b1176592909\",\"row_hash\":\"2b38e0678bfbb0c9fced9c67e6ba60af4a3a14c1c6e5c21c4a623ffba6f82a7d\"}]"; // exact producer bytes
+const pqSignChain = JSON.parse(PQ_SIGN_FIXTURE);
+const PQ_SIGN_PUB = `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAd4utl4Ig8O35dABdbu6ddpDDsvc9XXOWinpQFCApoa4=
+-----END PUBLIC KEY-----`;
+const BODY_TIP = 'ffe8abd842162d717ff274fdd3c21c58622df9ede534f6b540f2ae16b69f5503';
+{
+  const v = verifyChain(pqSignChain);
+  ok(v.ok === true && v.alg === 'stone-v1' && v.links === 6 && v.tip === BODY_TIP,
+    'pong-quilt R39 signed chain verifies under stone-v1 (6 links, tip stays the BODY tip under the staple)');
+  ok(pqSignChain[0].kind === 'stone.header' && pqSignChain[0].tool === 'pong-quilt',
+    'producer named in its own header (not laundered through a verifier repo)');
+  const s = verifyTipSignature(pqSignChain, PQ_SIGN_PUB);
+  ok(s.ok === true && s.tip === BODY_TIP && s.signer.key_id === 'pq-prerun-sign-pilot' &&
+     s.signer.signer_role === 'producer' && s.signer.alg === 'ed25519',
+    'auditor verifies the producer staple: key_id/signer_role named, tip binds the exact chain');
+
+  // the at-rest laundering attack against a REAL producer artifact: edit a
+  // checkpoint md5 post-signature, re-seal into a self-consistent chain,
+  // re-staple the OLD signature row re-hashed against the new tip
+  const edited = pqSignChain.slice(0, 5).map((r) => { const c = { ...r, args: r.args ? { ...r.args } : undefined }; delete c.row_hash; return c; });
+  edited[3].args.md5 = '643bd132d51f3fd2f08c005b48967ae0'; // level1.js content edit
+  sealChain(edited, undefined, { alg: 'stone-v1' });
+  const laundered = [...edited, { ...pqSignChain[5] }];
+  delete laundered[5].row_hash;
+  const newTip = edited[4].row_hash;
+  laundered[5].row_hash = sha256Hex(canonicalJSON([newTip, (({ row_hash, ...rest }) => rest)(laundered[5])]));
+  ok(verifyChain(laundered).ok === true,
+    'laundered producer chain (post-edit re-seal + old sig re-stapled) still verifies — hashes alone cannot catch this');
+  const sl = verifyTipSignature(laundered, PQ_SIGN_PUB);
+  ok(sl.ok === false && sl.why === 'signed tip does not match the chain tip (post-signature chain edit)',
+    'the producer signature catches it on the real artifact: signed tip names the pre-edit tip');
+
+  const wrongKeyPem = '-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA3qWb2E9rE7mQlXyGNoB4yDa8dF02kKQ3SvLtkTDMfB8=\n-----END PUBLIC KEY-----';
+  const sw = verifyTipSignature(pqSignChain, wrongKeyPem);
+  ok(sw.ok === false && sw.why === 'signature invalid for this tip and key',
+    'wrong public key refused against the producer staple');
+}
+
 // ---------- 14. zero-dependency + ESM static check ----------
 const src = readFileSync(join(HERE, 'stone.mjs'), 'utf8');
 const imports = [...src.matchAll(/(?:^|\n)\s*import\s+[^'"]*from\s+['"]([^'"]+)['"]/g)].map((m) => m[1]);

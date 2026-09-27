@@ -29,7 +29,7 @@ House law: **a receipt without a chain is a rumor.**
 | `stone.mjs` | the canonical module: `fnv1a64`, `rowHash`, `sealChain`, `verifyChain`, `detectAlg`, `canonicalJSON`, `sha256Hex`, `stamp`, `ALGS` (6 dialects), `verifyChainFile` |
 | `STONE-SPEC.md` | the format spec: row kinds, field normalization, genesis conventions, exact serialization per dialect, verification contract, writer's checklist |
 | `verify_all.mjs` | THE CONFORMANCE RUN: discovers every chain in every sibling repo, verifies each with stone.mjs, cross-checks each verdict against the repo's OWN local verifier |
-| `smoke.mjs` | stone self-checks — seal/verify/tamper per dialect, canonical-JSON stability, detection, zero-dep static check (58/58) |
+| `smoke.mjs` | stone self-checks — seal/verify/tamper per dialect, canonical-JSON stability, detection, zero-dep static check (85/85) |
 | `experiments/e_st1_conform.mjs` | the receipted conformance experiment — rules sealed first, results dogfooded into a stone-v1 chain written by stone.mjs itself |
 
 ## Dialects (legacy, verified as-found)
@@ -52,10 +52,22 @@ House law: **a receipt without a chain is a rumor.**
   row-splice caught at the exact row. A receipt without a chain is a rumor;
   an export without a verifier is noise.
 
+## Sign-lane adopters
+
+- **pong-quilt** — Round 39 (`tools/prerun.js`, STONE-V2-PILOTS first sign
+  pilot) staples a producer ed25519 signature on its birth-seal chain's tip
+  via this repo's `signTip()` / auditor `verifyTipSignature()`, cited in-repo
+  at `SuperInstance/pong-quilt` PR #51 (merged 2026-09-27). The producer key
+  stays with the producer; the unsigned `stone-v1.json` stays canonical.
+  Smoke section 13c pins the pilot's real signed output: verifies under
+  `stone.mjs`, signature binds the exact chain tip, and the at-rest
+  laundering attack (post-sign edit + re-seal + old-signature re-staple) is
+  caught by the signature, not the hashes.
+
 ## Run it
 
 ```
-node smoke.mjs          # 58/58 self-checks
+node smoke.mjs          # 85/85 self-checks
 node verify_all.mjs     # conformance run over ../ (the whole record)
 ```
 
