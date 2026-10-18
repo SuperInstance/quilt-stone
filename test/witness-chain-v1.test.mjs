@@ -28,8 +28,8 @@ const V = JSON.parse(readFileSync(new URL('../conformance-witness-chain-v1.json'
 // (A conformance suite that lists only the cases it passes is decoration.)
 // ---------------------------------------------------------------------------
 test('the vector file is intact -- its count and its digest are asserted', () => {
-  assert.equal(V.case_count, 7, 'the number of vector cases changed');
-  assert.equal(V.cases.length, 7, 'the number of vector cases on disk differs from the recorded count');
+  assert.equal(V.case_count, 8, 'the number of vector cases changed');
+  assert.equal(V.cases.length, 8, 'the number of vector cases on disk differs from the recorded count');
 
   // A LANGUAGE-INDEPENDENT digest: over the semantic content (heads and
   // canonical bodies), not over this file's bytes -- because the two
