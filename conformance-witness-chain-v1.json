@@ -1,0 +1,250 @@
+{
+ "at": "2026-10-18",
+ "spec": "witness-chain/1",
+ "source": "SuperInstance/AI-Writings labs/situation-recorder/recorder.py (the reference implementation), and SuperInstance/witness-spec ref/chain.py",
+ "note": "Every hash, head and canonical byte string in this file was produced by the PYTHON reference implementation. The JavaScript side must reproduce them EXACTLY. This file is the receipt.",
+ "i_json_note": "I-JSON BOUNDARY, FOUND WHILE CROSS-CHECKING THESE TWO IMPLEMENTATIONS. An integer above 2^53 (9007199254740993) is NOT an I-JSON value, so RFC 8785 does not say how to serialize it -- and the two languages DISAGREE: Python's json keeps the exact integer through a round trip, while JSON.parse in JavaScript cannot represent it and rounds it to 9007199254740992. A body containing such an integer would therefore be hashed DIFFERENTLY by the two implementations, with no spec to say which is right. The fix is not to pick a side: a chain whose body leaves the I-JSON range must be REFUSED, not silently canonicalized. The case below therefore uses 2^53 exactly, which is inside the range and survives both languages unchanged.",
+ "digest_recipe": "sha256 over, for each case in order: the head, a newline, then each canonical body with a newline. Computed identically in Python and JavaScript -- it is a digest of the SEMANTIC content, not of this file's bytes, so it does not depend on how either language happens to format a float.",
+ "vectors_digest": "6398f6f4f5db8d4760b865bf5f3727f456caee8dd84dc2d82d0ff9135c144bfb",
+ "genesis": "0x0000000000000000",
+ "case_count": 7,
+ "cases": [
+  {
+   "name": "a real recorder.py Situation, 3 records",
+   "note": "emitted by the reference implementation itself",
+   "records": [
+    {
+     "v": "witness-chain/1",
+     "sid": "sit-dialect-0001",
+     "seq": 0,
+     "ts": "2026-10-18T22:00:00Z",
+     "actor": {
+      "tier": "captain",
+      "id": "opus-5.5",
+      "session": "fresh-01"
+     },
+     "rel": "ROUTE",
+     "refs": [],
+     "body": {
+      "task": "check-claim",
+      "n": 1
+     },
+     "hash": "0x2b2b3f3e68e298c814f5b78cc1327a5d8c2ea084fb8bce83b625a28531c784d8"
+    },
+    {
+     "v": "witness-chain/1",
+     "sid": "sit-dialect-0001",
+     "seq": 1,
+     "ts": "2026-10-18T22:06:00Z",
+     "actor": {
+      "tier": "crew",
+      "id": "deepseek-chat",
+      "session": "fresh-01"
+     },
+     "rel": "OUTCOME",
+     "refs": [],
+     "body": {
+      "result": "ok",
+      "n": 2
+     },
+     "hash": "0xf5ee1d3a27302fa2b1b18f67618a6547072099253c2c0910537ac6ed306bfd32"
+    },
+    {
+     "v": "witness-chain/1",
+     "sid": "sit-dialect-0001",
+     "seq": 2,
+     "ts": "2026-10-18T22:12:00Z",
+     "actor": {
+      "tier": "captain",
+      "id": "opus-5.5",
+      "session": "fresh-01"
+     },
+     "rel": "FOLD",
+     "refs": [],
+     "body": {
+      "result": "ok",
+      "n": 3
+     },
+     "hash": "0xc47c678648a5c3a1a4f78d364f580a325696be4a7aeb10ed7f84ab62c0800f7a"
+    }
+   ],
+   "head": "0xc47c678648a5c3a1a4f78d364f580a325696be4a7aeb10ed7f84ab62c0800f7a",
+   "genesis": "0x0000000000000000",
+   "canonical_bodies": [
+    "{\"actor\":{\"id\":\"opus-5.5\",\"session\":\"fresh-01\",\"tier\":\"captain\"},\"body\":{\"n\":1,\"task\":\"check-claim\"},\"refs\":[],\"rel\":\"ROUTE\",\"seq\":0,\"sid\":\"sit-dialect-0001\",\"ts\":\"2026-10-18T22:00:00Z\",\"v\":\"witness-chain/1\"}",
+    "{\"actor\":{\"id\":\"deepseek-chat\",\"session\":\"fresh-01\",\"tier\":\"crew\"},\"body\":{\"n\":2,\"result\":\"ok\"},\"refs\":[],\"rel\":\"OUTCOME\",\"seq\":1,\"sid\":\"sit-dialect-0001\",\"ts\":\"2026-10-18T22:06:00Z\",\"v\":\"witness-chain/1\"}",
+    "{\"actor\":{\"id\":\"opus-5.5\",\"session\":\"fresh-01\",\"tier\":\"captain\"},\"body\":{\"n\":3,\"result\":\"ok\"},\"refs\":[],\"rel\":\"FOLD\",\"seq\":2,\"sid\":\"sit-dialect-0001\",\"ts\":\"2026-10-18T22:12:00Z\",\"v\":\"witness-chain/1\"}"
+   ]
+  },
+  {
+   "name": "one record",
+   "note": "",
+   "records": [
+    {
+     "v": "witness-chain/1",
+     "sid": "s",
+     "seq": 0,
+     "ts": "2026-10-18T00:00:00Z",
+     "actor": {
+      "tier": "captain",
+      "id": "x",
+      "session": "y"
+     },
+     "rel": "ROUTE",
+     "refs": [],
+     "body": {},
+     "hash": "0x89f39851c365cc46f04918be70b6bf7c747aa9de300881d107f43fa2e8c6387f"
+    }
+   ],
+   "head": "0x89f39851c365cc46f04918be70b6bf7c747aa9de300881d107f43fa2e8c6387f",
+   "genesis": "0x0000000000000000",
+   "canonical_bodies": [
+    "{\"actor\":{\"id\":\"x\",\"session\":\"y\",\"tier\":\"captain\"},\"body\":{},\"refs\":[],\"rel\":\"ROUTE\",\"seq\":0,\"sid\":\"s\",\"ts\":\"2026-10-18T00:00:00Z\",\"v\":\"witness-chain/1\"}"
+   ]
+  },
+  {
+   "name": "the astral-plane keys (UTF-16 order, not code point)",
+   "note": "",
+   "records": [
+    {
+     "v": "witness-chain/1",
+     "seq": 0,
+     "body": {
+      "𐀀": "A",
+      "": "B"
+     },
+     "hash": "0x215e877bae32157d62822dcea17df985d4870f2f19c21cbb0c12f06289130346"
+    },
+    {
+     "v": "witness-chain/1",
+     "seq": 1,
+     "body": {
+      "𐀀": "A",
+      "": "B"
+     },
+     "hash": "0x919b3b74a11b1a20d84bf5b985c469cc2616bc8453c612da28070776e0c8d9c3"
+    }
+   ],
+   "head": "0x919b3b74a11b1a20d84bf5b985c469cc2616bc8453c612da28070776e0c8d9c3",
+   "genesis": "0x0000000000000000",
+   "canonical_bodies": [
+    "{\"body\":{\"\":\"B\",\"𐀀\":\"A\"},\"seq\":0,\"v\":\"witness-chain/1\"}",
+    "{\"body\":{\"\":\"B\",\"𐀀\":\"A\"},\"seq\":1,\"v\":\"witness-chain/1\"}"
+   ]
+  },
+  {
+   "name": "numbers of every JCS shape, inside the I-JSON range",
+   "note": "",
+   "records": [
+    {
+     "v": "witness-chain/1",
+     "seq": 0,
+     "body": {
+      "z": 0,
+      "a": -0.0,
+      "b": 1e+21,
+      "c": 1e-07,
+      "d": 0.1,
+      "e": -1.5,
+      "f": 9007199254740992,
+      "g": 1e-06,
+      "h": 333333333.3333333
+     },
+     "hash": "0x8459ac44ace35e5dc1c6e01992fe4a98fdceb7845b150eb21ea0185b127f8221"
+    }
+   ],
+   "head": "0x8459ac44ace35e5dc1c6e01992fe4a98fdceb7845b150eb21ea0185b127f8221",
+   "genesis": "0x0000000000000000",
+   "canonical_bodies": [
+    "{\"body\":{\"a\":0,\"b\":1e+21,\"c\":1e-7,\"d\":0.1,\"e\":-1.5,\"f\":9007199254740992,\"g\":0.000001,\"h\":333333333.3333333,\"z\":0},\"seq\":0,\"v\":\"witness-chain/1\"}"
+   ]
+  },
+  {
+   "name": "nested, null, bool, empty containers",
+   "note": "",
+   "records": [
+    {
+     "v": "witness-chain/1",
+     "seq": 0,
+     "body": {
+      "n": null,
+      "t": true,
+      "f": false,
+      "arr": [
+       1,
+       [
+        2,
+        [
+         3
+        ]
+       ]
+      ],
+      "obj": {
+       "z": {
+        "y": {
+         "x": 1
+        }
+       }
+      }
+     },
+     "refs": [],
+     "hash": "0x22e5a783f9108c9875ddc129d78fa70d0556f2e36d43801b23f038226117a705"
+    }
+   ],
+   "head": "0x22e5a783f9108c9875ddc129d78fa70d0556f2e36d43801b23f038226117a705",
+   "genesis": "0x0000000000000000",
+   "canonical_bodies": [
+    "{\"body\":{\"arr\":[1,[2,[3]]],\"f\":false,\"n\":null,\"obj\":{\"z\":{\"y\":{\"x\":1}}},\"t\":true},\"refs\":[],\"seq\":0,\"v\":\"witness-chain/1\"}"
+   ]
+  },
+  {
+   "name": "an empty body and an empty refs list",
+   "note": "",
+   "records": [
+    {
+     "v": "witness-chain/1",
+     "seq": 0,
+     "body": {},
+     "refs": [],
+     "actor": {},
+     "hash": "0xe1ee429f4a6c318efc259072dd00aa20581792744877e71e43cb4c69b709c641"
+    }
+   ],
+   "head": "0xe1ee429f4a6c318efc259072dd00aa20581792744877e71e43cb4c69b709c641",
+   "genesis": "0x0000000000000000",
+   "canonical_bodies": [
+    "{\"actor\":{},\"body\":{},\"refs\":[],\"seq\":0,\"v\":\"witness-chain/1\"}"
+   ]
+  },
+  {
+   "name": "key order does not change the hash",
+   "note": "",
+   "records": [
+    {
+     "v": "witness-chain/1",
+     "seq": 0,
+     "body": {
+      "a": 1,
+      "b": 2
+     },
+     "hash": "0x228aef1afe0e704b4b05a15f4fc87fadffddcb460e6195ea4306efa64d568d1a"
+    },
+    {
+     "v": "witness-chain/1",
+     "seq": 1,
+     "body": {
+      "b": 2,
+      "a": 1
+     },
+     "hash": "0x954cac1bf803a930dba65d15e8b440188adb6d20582bc16c7af09bd6aeb3ac65"
+    }
+   ],
+   "head": "0x954cac1bf803a930dba65d15e8b440188adb6d20582bc16c7af09bd6aeb3ac65",
+   "genesis": "0x0000000000000000",
+   "canonical_bodies": [
+    "{\"body\":{\"a\":1,\"b\":2},\"seq\":0,\"v\":\"witness-chain/1\"}",
+    "{\"body\":{\"a\":1,\"b\":2},\"seq\":1,\"v\":\"witness-chain/1\"}"
+   ]
+  }
+ ]
+}

@@ -196,6 +196,41 @@ export const ALGS = {
       return null;
     },
   },
+  'witness-chain-v1': {
+    // THE SPEC's chain rule, as published in witness-chain/1 and implemented
+    // by SuperInstance/AI-Writings' labs/situation-recorder/recorder.py:
+    //
+    //   leaf(i) = SHA256(0x00 || JCS(record_i))   -- record_i MINUS its own
+    //                                                   `hash` field
+    //   hash(0) = GENESIS                         -- 0x0000000000000000
+    //   hash(i) = SHA256(0x01 || hash(i-1) || leaf(i))
+    //   head    = hash(n)
+    //
+    // The 0x00/0x01 domain separation is RFC 6962 2.1. It is what makes
+    // this a DIFFERENT chain from `sha256-canonical` -- which hashes the
+    // same canonical bytes with a different envelope -- so the two can
+    // never be mistaken for one another.
+    //
+    // THE LINKAGE LIVES IN RECORD ORDER. A witness-chain/1 record carries
+    // `hash` and NO `prev`; `prev` is a property of the CHAIN, not of the
+    // row. `detectAlg`'s rawpipe branch requires prev AND hash together, so
+    // the two dialects cannot be confused. (This is also why the fleet's
+    // canonical verifier used to report ABSENCE where recorder.py stands:
+    // it was looking for a `prev` field that this format deliberately
+    // does not have.)
+    //
+    // The version field (`v: "witness-chain/1"`) is INSIDE the hashed bytes,
+    // so it cannot be stripped or downgraded without breaking the chain.
+    repos: ['AI-Writings', 'witness-spec'],
+    hashField: 'hash', prevField: null,
+    genesis: '0x0000000000000000',
+    hashForm: /^0x[0-9a-f]{64}$/,
+    hashOf(row, prev) {
+      const leaf = '0x' + sha256Hex('\u0000' + canonicalJSON(withoutKeys(row, ['hash'])));
+      return '0x' + sha256Hex('\u0001' + prev + leaf);
+    },
+    setLinks(row, prev, hash) { row.hash = hash; },
+  },
   'stone-v1': {
     // THE FORWARD FORMAT for NEW chains (STONE-SPEC.md §stone-v1):
     // sha256 over canonicalJSON, row_hash field, mandatory stone.header row 0,
@@ -261,6 +296,22 @@ export function detectAlg(rows) {
     if (trialOk(rows, 'fnv1a64-quant')) return 'fnv1a64-quant';
     if (trialOk(rows, 'fnv1a64-tidepool')) return 'fnv1a64-tidepool';
     return 'fnv1a64-quant'; // fail under the primary shape, verdict carries why
+  }
+  // 3b. a `hash` field, and NO prev / prev_hash / row_hash anywhere ->
+  //     witness-chain-v1. The SHAPE is a guess; the TRIAL is the proof, and
+  //     a chain that fails the trial is still reported under this dialect
+  //     so the verdict carries WHY rather than saying "undetectable".
+  let hasPlainHash = false, hasOtherLink = false;
+  for (const r of rows) {
+    if (!r || typeof r !== 'object') continue;
+    if (r.hash !== undefined) hasPlainHash = true;
+    if (r.prev !== undefined || r.prev_hash !== undefined || r.row_hash !== undefined) {
+      hasOtherLink = true; break;
+    }
+  }
+  if (hasPlainHash && !hasOtherLink) {
+    if (trialOk(rows, 'witness-chain-v1')) return 'witness-chain-v1';
+    return 'witness-chain-v1';
   }
   let rh = null;
   for (const r of rows) {
