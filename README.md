@@ -42,6 +42,8 @@ House law: **a receipt without a chain is a rumor.**
 | `fnv1a64-quant` | quilt-quant | fnv over top-sorted JSON (seq inside), fields `prev_hash`/`row_hash`, 16hex, genesis 16 zeros |
 | `fnv1a64-tidepool` | quilt-playtest (discovered 26-b) | quant's math but seq OUTSIDE the hash |
 | `stone-v1` | **new chains** | sha256 over canonical JSON + mandatory `stone.header` row, genesis `STONE-GENESIS-1` |
+| `fnv1a64-utf8-pyjson` | **AI-Writings** (`calculator-quilt`) | fnv1a-64 over **UTF-8 BYTES** of **Python's** `json.dumps` (sorted keys, compact, ensure_ascii, `0.0` not `0`), fields `prev`/`hash`, genesis `0x`+16 zeros |
+| `witness-chain-v1` | **AI-Writings** (`labs/situation-recorder`), **witness-spec** | sha256 over RFC 8785 JCS, **RFC 6962 domain separation** (`0x00` leaf / `0x01` node), `hash` field, genesis `0x`+16 zeros — **the linkage is in RECORD ORDER: there is no `prev` field** |
 
 ## Forward-format adopters
 

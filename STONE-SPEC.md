@@ -70,6 +70,8 @@ interpret kinds; it only guarantees the links.
 | fnv1a64-rawpipe | `hash` | `prev` (explicit, stored per row) | quilt-raw |
 | fnv1a64-quant | `row_hash` | `prev_hash` (explicit) | quilt-quant |
 | fnv1a64-tidepool | `row_hash` | `prev_hash` (explicit) | quilt-playtest (discovered) |
+| fnv1a64-utf8-pyjson | `hash` | `prev` (explicit) | AI-Writings `calculator-quilt` (discovered by the fleet scan) |
+| witness-chain-v1 | `hash` | (implicit — the linkage is in RECORD ORDER; there is NO `prev` field) | AI-Writings `situation-recorder` |
 
 `verifyChain` returns both `at` (the broken row's `seq`, fleet-compat) and
 `firstBadIndex` (the 0-based array index — the canonical locator).
@@ -84,6 +86,8 @@ interpret kinds; it only guarantees the links.
 | fnv1a64-quant | `'0000000000000000'` (16 zeros) |
 | fnv1a64-tidepool | `'0000000000000000'` (16 zeros) |
 | stone-v1 | `'STONE-GENESIS-1'` (or the header row's recorded `genesis`) |
+| fnv1a64-utf8-pyjson | `'0x0000000000000000'` |
+| witness-chain-v1 | `'0x0000000000000000'` |
 
 The genesis is a **string hashed into row 0** — there is no separate genesis
 object in the file. Repos that pass a custom genesis to `sealChain` must

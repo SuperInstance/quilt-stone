@@ -116,6 +116,150 @@ function withoutKeys(row, drop) {
   return out;
 }
 
+
+// ============================================================================
+// 1b. PYTHON'S json.dumps -- the canonical form of the calculator-quilt flavor
+// ============================================================================
+//
+// A FIFTH canonical form, and the only one that is not JSON-native.
+//
+//   json.dumps(obj, sort_keys=True, separators=(",", ":"))
+//
+// differs from every other dialect's canon in three ways that all MATTER:
+//
+//   1. ensure_ascii defaults to True, so non-ASCII is escaped as \uXXXX
+//      (JCS and JSON.stringify do not);
+//   2. a float prints with repr()'s rules -- `0.0` prints as `0.0`, not `0`;
+//   3. an int prints EXACTLY, at any size, because Python's int is
+//      arbitrary-precision.
+//
+// WHICH MEANS THE CANONICAL FORM DEPENDS ON THE LEXICAL FORM OF THE
+// NUMBER, and JSON.parse throws that distinction away. So the numbers have
+// to survive the parse, and that is what parsePreservingNumbers() is for.
+//
+// A CONSEQUENCE WORTH KNOWING: this flavor is IMMUNE to the 2^53+1 problem
+// that witness-chain-v1 has, because the sentinel carries the original
+// text and BigInt keeps an integer exact at any size. The two flavors
+// disagree about numbers because they canonicalize them by DIFFERENT
+// RULES, and each rule has its own edge.
+
+const PY_RAW = '__PYRAW_NUM__';
+
+// Python's repr() for a float: the shortest round-trip digits, with the
+// exponent band Python uses (exponential below 1e-4, at or above 1e16)
+// and a two-digit exponent.
+export function pyNum(v) {
+  if (Number.isInteger(v) && Math.abs(v) < 1e16) return String(v);
+  if (!Number.isFinite(v)) return Number.isNaN(v) ? 'NaN' : (v > 0 ? 'Infinity' : '-Infinity');
+  if (v === 0) return Object.is(v, -0) ? '-0.0' : '0.0';
+  const s = String(v);
+  const m = /^(-?)(\d+)(?:\.(\d+))?(?:e([+-]\d+))?$/.exec(s);
+  if (!m) return s;
+  const neg = m[1] === '-' ? '-' : '';
+  const intPart = m[2], fracPart = m[3] || '';
+  const exp = m[4] ? parseInt(m[4], 10) : 0;
+  const raw = intPart + fracPart;
+  const leadZeros = raw.length - raw.replace(/^0+/, '').length;
+  const digits = raw.replace(/^0+/, '').replace(/0+$/, '');
+  if (!digits) return neg ? '-0.0' : '0.0';
+  const decpt = intPart.length + exp - leadZeros;
+  const n = digits.length;
+  if (decpt > 0 && decpt <= 16) {
+    if (decpt >= n) return neg + digits + '0'.repeat(decpt - n) + '.0';
+    return neg + digits.slice(0, decpt) + '.' + digits.slice(decpt);
+  }
+  if (decpt <= 0 && decpt > -4) return neg + '0.' + '0'.repeat(-decpt) + digits;
+  const e = decpt - 1;
+  const es = (e >= 0 ? '+' : '-') + String(Math.abs(e)).padStart(2, '0');
+  return neg + digits[0] + (n > 1 ? '.' + digits.slice(1) : '') + 'e' + es;
+}
+
+// Python's json.dumps for a number token: an int prints exactly, a float
+// prints by repr(). The token's LEXICAL form decides which.
+export function pyNumFromText(t) {
+  if (/[.eE]/.test(t)) {
+    const v = Number(t);
+    if (Number.isInteger(v) && Math.abs(v) < 1e16) {
+      return Object.is(v, -0) ? '-0.0' : v.toFixed(1);
+    }
+    return pyNum(v);
+  }
+  return String(BigInt(t));
+}
+
+// Python's json.dumps for a string: JSON escaping, PLUS ensure_ascii.
+export function pyStr(s) {
+  return JSON.stringify(s).replace(/[\u0080-\uffff]/g, (c) =>
+    '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+}
+
+// Python sorts str by CODE POINT; JavaScript's default sort is by UTF-16
+// code UNIT. They disagree above the BMP, so this is not cosmetic.
+export function pySortKeys(keys) {
+  return keys.slice().sort((a, b) => {
+    const A = Array.from(a), B = Array.from(b);
+    const n = Math.min(A.length, B.length);
+    for (let i = 0; i < n; i++) {
+      const x = A[i].codePointAt(0), y = B[i].codePointAt(0);
+      if (x !== y) return x - y;
+    }
+    return A.length - B.length;
+  });
+}
+
+export function pyJsonDumps(v) {
+  if (v === null || v === undefined) return 'null';
+  if (typeof v === 'boolean') return v ? 'true' : 'false';
+  if (typeof v === 'number') return pyNum(v);
+  if (typeof v === 'string') {
+    if (v.startsWith(PY_RAW)) return pyNumFromText(v.slice(PY_RAW.length));
+    return pyStr(v);
+  }
+  if (Array.isArray(v)) return '[' + v.map(pyJsonDumps).join(',') + ']';
+  return '{' + pySortKeys(Object.keys(v))
+    .map((k) => pyStr(k) + ':' + pyJsonDumps(v[k])).join(',') + '}';
+}
+
+// FNV-1a-64 over UTF-8 BYTES. Every OTHER dialect in this file iterates
+// UTF-16 CODE UNITS, which is what JavaScript's strings are made of. Python
+// iterates UTF-8 bytes. The two disagree on any non-ASCII input, which is
+// why this is a separate dialect and not a variant of the others.
+export function fnv1a64Utf8(s) {
+  const b = Buffer.from(s, 'utf8');
+  let h = 0xcbf29ce484222325n, p = 0x100000001b3n, m = 0xffffffffffffffffn;
+  for (const x of b) { h ^= BigInt(x); h = (h * p) & m; }
+  return '0x' + h.toString(16).padStart(16, '0');
+}
+
+// Parse JSON, but KEEP THE LEXICAL FORM OF EVERY NUMBER.
+export function parsePreservingNumbers(text) {
+  const out = [];
+  let i = 0;
+  const n = text.length;
+  while (i < n) {
+    const c = text[i];
+    if (c === '"') {
+      let j = i + 1;
+      while (j < n) { if (text[j] === '\\') { j += 2; continue; } if (text[j] === '"') break; j++; }
+      out.push(text.slice(i, j + 1)); i = j + 1; continue;
+    }
+    if (c === '-' || (c >= '0' && c <= '9')) {
+      let j = i;
+      if (text[j] === '-') j++;
+      while (j < n && text[j] >= '0' && text[j] <= '9') j++;
+      if (text[j] === '.') { j++; while (j < n && text[j] >= '0' && text[j] <= '9') j++; }
+      if (text[j] === 'e' || text[j] === 'E') {
+        j++;
+        if (text[j] === '+' || text[j] === '-') j++;
+        while (j < n && text[j] >= '0' && text[j] <= '9') j++;
+      }
+      out.push('"' + PY_RAW + text.slice(i, j) + '"'); i = j; continue;
+    }
+    out.push(c); i++;
+  }
+  return JSON.parse(out.join(''));
+}
+
 // ============================================================================
 // 2. DIALECT REGISTRY
 // ============================================================================
@@ -196,6 +340,80 @@ export const ALGS = {
       return null;
     },
   },
+  'fnv1a64-utf8-pyjson': {
+    // THE calculator-quilt flavor (SuperInstance/AI-Writings ->
+    // labs/examples/calculator-quilt/calc_quilt.py), which the verifier
+    // had never heard of and MISDIAGNOSED as fnv1a64-rawpipe.
+    //
+    //   hash = '0x%016x' % fnv1a64( json.dumps(env, sort_keys=True,
+    //                                              separators=(',',':')) )
+    //   env  = the record MINUS its `hash`, with `prev` OVERWRITTEN by the
+    //          running tip
+    //   GENESIS = '0x0000000000000000'
+    //
+    // THREE THINGS MAKE IT A DIALECT OF ITS OWN:
+    //   * FNV over UTF-8 BYTES. Every other dialect here iterates UTF-16
+    //     CODE UNITS, because that is what JavaScript strings are made of.
+    //     Python iterates UTF-8 bytes. They disagree on non-ASCII.
+    //   * a canonical form that is PYTHON's json.dumps, not JSON's: floats
+    //     print as `0.0` and not `0`, and non-ASCII is \uXXXX-escaped.
+    //   * `prev` is OVERWRITTEN before hashing rather than excluded, so
+    //     the STORED `prev` field is not itself covered by the hash.
+    //
+    // AND THE CONSEQUENCE THAT MATTERS MOST: because the canonical form
+    // depends on the LEXICAL form of a number, this flavor can only be
+    // verified FROM THE RAW TEXT. JSON.parse throws the int/float
+    // distinction away, and a verifier handed a pre-parsed structure
+    // cannot re-derive these hashes. readJsonl() therefore keeps a
+    // number-preserving parse alongside each row.
+    repos: ['AI-Writings'],
+    hashField: 'hash', prevField: 'prev',
+    genesis: '0x0000000000000000',
+    hashForm: /^0x[0-9a-f]{16}$/,
+    hashOf(row, prev) {
+      const src = row.__pyjson ?? row;
+      const env = { ...src };
+      delete env.hash;
+      env.prev = prev;
+      return fnv1a64Utf8(pyJsonDumps(env));
+    },
+    setLinks(row, prev, hash) { row.prev = prev; row.hash = hash; },
+  },
+  'witness-chain-v1': {
+    // THE SPEC's chain rule, as published in witness-chain/1 and implemented
+    // by SuperInstance/AI-Writings' labs/situation-recorder/recorder.py:
+    //
+    //   leaf(i) = SHA256(0x00 || JCS(record_i))   -- record_i MINUS its own
+    //                                                   `hash` field
+    //   hash(0) = GENESIS                         -- 0x0000000000000000
+    //   hash(i) = SHA256(0x01 || hash(i-1) || leaf(i))
+    //   head    = hash(n)
+    //
+    // The 0x00/0x01 domain separation is RFC 6962 2.1. It is what makes
+    // this a DIFFERENT chain from `sha256-canonical` -- which hashes the
+    // same canonical bytes with a different envelope -- so the two can
+    // never be mistaken for one another.
+    //
+    // THE LINKAGE LIVES IN RECORD ORDER. A witness-chain/1 record carries
+    // `hash` and NO `prev`; `prev` is a property of the CHAIN, not of the
+    // row. `detectAlg`'s rawpipe branch requires prev AND hash together, so
+    // the two dialects cannot be confused. (This is also why the fleet's
+    // canonical verifier used to report ABSENCE where recorder.py stands:
+    // it was looking for a `prev` field that this format deliberately
+    // does not have.)
+    //
+    // The version field (`v: "witness-chain/1"`) is INSIDE the hashed bytes,
+    // so it cannot be stripped or downgraded without breaking the chain.
+    repos: ['AI-Writings', 'witness-spec'],
+    hashField: 'hash', prevField: null,
+    genesis: '0x0000000000000000',
+    hashForm: /^0x[0-9a-f]{64}$/,
+    hashOf(row, prev) {
+      const leaf = '0x' + sha256Hex('\u0000' + canonicalJSON(withoutKeys(row, ['hash'])));
+      return '0x' + sha256Hex('\u0001' + prev + leaf);
+    },
+    setLinks(row, prev, hash) { row.hash = hash; },
+  },
   'stone-v1': {
     // THE FORWARD FORMAT for NEW chains (STONE-SPEC.md §stone-v1):
     // sha256 over canonicalJSON, row_hash field, mandatory stone.header row 0,
@@ -255,12 +473,36 @@ export function detectAlg(rows) {
   for (const r of rows) {
     if (!r || typeof r !== 'object') continue;
     if (r.prev_hash !== undefined) { hasPrevHash = true; break; }
-    if (r.prev !== undefined && r.hash !== undefined) return 'fnv1a64-rawpipe';
+    if (r.prev !== undefined && r.hash !== undefined) {
+      // prev+hash together: rawpipe OR the calculator-quilt flavor. They are
+      // discriminated by TRIAL, not by a guess -- and the trial must come
+      // first, because the old code returned rawpipe UNVERIFIED and so
+      // reported "seq break at 0" for a chain that is perfectly valid under
+      // its own rule.
+      if (trialOk(rows, 'fnv1a64-utf8-pyjson')) return 'fnv1a64-utf8-pyjson';
+      return 'fnv1a64-rawpipe';
+    }
   }
   if (hasPrevHash) {
     if (trialOk(rows, 'fnv1a64-quant')) return 'fnv1a64-quant';
     if (trialOk(rows, 'fnv1a64-tidepool')) return 'fnv1a64-tidepool';
     return 'fnv1a64-quant'; // fail under the primary shape, verdict carries why
+  }
+  // 3b. a `hash` field, and NO prev / prev_hash / row_hash anywhere ->
+  //     witness-chain-v1. The SHAPE is a guess; the TRIAL is the proof, and
+  //     a chain that fails the trial is still reported under this dialect
+  //     so the verdict carries WHY rather than saying "undetectable".
+  let hasPlainHash = false, hasOtherLink = false;
+  for (const r of rows) {
+    if (!r || typeof r !== 'object') continue;
+    if (r.hash !== undefined) hasPlainHash = true;
+    if (r.prev !== undefined || r.prev_hash !== undefined || r.row_hash !== undefined) {
+      hasOtherLink = true; break;
+    }
+  }
+  if (hasPlainHash && !hasOtherLink) {
+    if (trialOk(rows, 'witness-chain-v1')) return 'witness-chain-v1';
+    return 'witness-chain-v1';
   }
   let rh = null;
   for (const r of rows) {
@@ -534,14 +776,31 @@ export function verifyChainFile(path, opts) {
   }
 }
 
-function readJsonl(path) {
-  const text = readFileSync(path, 'utf8');
+// THE ONE JSONL PARSER. Everything that reads a chain file goes through
+// this, because there is a flavor whose canonical form depends on the
+// LEXICAL form of a number, and a second parser that forgets that will
+// misdiagnose a valid chain -- which is exactly what the fleet scan was
+// doing before this function existed.
+export function parseJsonl(text) {
   const lines = text.split('\n');
   const rows = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (line === '') continue;
-    try { rows.push(JSON.parse(line)); }
+    try {
+      const row = JSON.parse(line);
+      // Keep the LEXICAL form of every number alongside the row, for the
+      // one flavor whose canonical form depends on it (fnv1a64-utf8-pyjson:
+      // Python's json.dumps prints `0.0` and not `0`, and JSON.parse cannot
+      // tell them apart). NON-ENUMERABLE, so it does not show up in
+      // Object.keys, JSON.stringify, or any other dialect's canon.
+      try {
+        Object.defineProperty(row, '__pyjson', {
+          value: parsePreservingNumbers(line), enumerable: false,
+        });
+      } catch (e) { /* frozen row: fall back to the plain parse */ }
+      rows.push(row);
+    }
     catch (e) {
       const err = new Error(`malformed JSON at line ${i + 1}: ${e.message}`);
       err.stoneMalformedLine = i;
@@ -549,6 +808,10 @@ function readJsonl(path) {
     }
   }
   return rows;
+}
+
+function readJsonl(path) {
+  return parseJsonl(readFileSync(path, 'utf8'));
 }
 
 // ============================================================================
