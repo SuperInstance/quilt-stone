@@ -1,0 +1,41 @@
+# quilt-stone's CI. It had NONE -- the repository that is supposed to be
+# THE canonical verifier for the whole fleet was verifying nothing, on
+# purpose or otherwise.
+#
+# Three things run, and the third is the one that matters:
+#
+#   1. the smoke suite -- 94 pinned checks over the hash primitives, the
+#      dialect registry, and the seal/verify round trips;
+#   2. the test suite -- the RFC 8785 conformance vectors and the
+#      witness-chain-v1 dialect, which re-derives every hash, every head
+#      and every CANONICAL BYTE STRING from the PYTHON reference
+#      implementation's recorded output;
+#   3. the FLEET SCAN -- verify_all.mjs walks the sibling repositories and
+#      verifies every chain it finds under that chain's OWN dialect. This
+#      is the job the repository exists to do, so it is the one that must
+#      be exercised rather than assumed.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: the smoke suite
+        run: node smoke.mjs
+
+      - name: the test suite (RFC 8785 vectors, the witness-chain-v1 dialect)
+        run: npm test
+
+      - name: the fleet scan -- every chain in the sibling repos, under its own dialect
+        run: node verify_all.mjs

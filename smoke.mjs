@@ -179,13 +179,17 @@ ok(/^st_[0-9a-z]+_[0-9a-z]+$/.test(s), 'stamp(prefix) format');
 // silently added or removed without this going red. (A registry that only
 // checks "there are some" is decoration.)
 const ALG_SET = ['fnv1a64-fleet', 'sha256-canonical', 'fnv1a64-rawpipe', 'fnv1a64-quant',
-                 'fnv1a64-tidepool', 'witness-chain-v1', 'stone-v1'];
+                 'fnv1a64-tidepool', 'fnv1a64-utf8-pyjson', 'witness-chain-v1', 'stone-v1'];
 ok(Object.keys(ALGS).length === ALG_SET.length &&
    ALG_SET.every((k) => ALGS[k]) &&
    Object.keys(ALGS).every((k) => ALG_SET.includes(k)),
    `ALGS registry: ${ALG_SET.length} dialects, exactly the expected set`);
 ok(ALGS['fnv1a64-fleet'].genesis === 'GENESIS', 'ALGS registry: fleet genesis');
 // the new dialect's shape, pinned
+ok(ALGS['fnv1a64-utf8-pyjson'] && ALGS['fnv1a64-utf8-pyjson'].hashField === 'hash' &&
+   ALGS['fnv1a64-utf8-pyjson'].prevField === 'prev' &&
+   ALGS['fnv1a64-utf8-pyjson'].genesis === '0x0000000000000000',
+   'ALGS registry: fnv1a64-utf8-pyjson is hash+prev, 0x genesis');
 ok(ALGS['witness-chain-v1'] && ALGS['witness-chain-v1'].hashField === 'hash' &&
    ALGS['witness-chain-v1'].prevField === null &&
    ALGS['witness-chain-v1'].genesis === '0x0000000000000000',

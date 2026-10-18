@@ -13,7 +13,7 @@
 import { readdirSync, statSync, readFileSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { verifyChain, verifyChainFile, detectAlg } from './stone.mjs';
+import { verifyChain, verifyChainFile, detectAlg, parseJsonl } from './stone.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..'); // /home/z/my-project/download
@@ -174,7 +174,7 @@ function walkJsonl(dir, out, depth = 0) {
 function sniffChainFile(path) {
   let rows;
   try {
-    rows = readFileSync(path, 'utf8').split('\n').filter((l) => l.trim() !== '').map((l) => JSON.parse(l));
+    rows = parseJsonl(readFileSync(path, 'utf8'));   // THE parser -- a second one misdiagnoses a valid chain
   } catch { return { chain: false, reason: 'not parseable as JSONL' }; }
   if (!Array.isArray(rows) || rows.length === 0) return { chain: false, reason: 'empty file' };
   const hasLinks = (r) => r && typeof r === 'object' &&
