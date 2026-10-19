@@ -8,7 +8,7 @@ import { join, dirname } from 'node:path';
 import {
   fnv1a64, fnv1a64RawString, fnv1a64QuantString, sha256Hex, canonicalJSON,
   rowHash, sealChain, verifyChain, detectAlg, stamp, ALGS, annotateTip,
-  signTip, verifyTipSignature,
+  signTip, verifyTipSignature, RULE_FROM,
 } from './stone.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -179,12 +179,41 @@ ok(/^st_[0-9a-z]+_[0-9a-z]+$/.test(s), 'stamp(prefix) format');
 // silently added or removed without this going red. (A registry that only
 // checks "there are some" is decoration.)
 const ALG_SET = ['fnv1a64-fleet', 'sha256-canonical', 'fnv1a64-rawpipe', 'fnv1a64-quant',
-                 'fnv1a64-tidepool', 'fnv1a64-utf8-pyjson', 'witness-chain-v1', 'stone-v1'];
+                 'fnv1a64-tidepool', 'fnv1a64-utf8-pyjson', 'witness-chain-v1', 'stone-v1',
+                 // the census dialects (2026-10) -- each read out of its owner's source
+                 'chrono-organ/1', 'sha256-pyjson-probe', 'quilt-cell-ledger/1',
+                 'quilt-edge/1', 'moth-ledger/1', 'quilt-doctor-wal'];
 ok(Object.keys(ALGS).length === ALG_SET.length &&
    ALG_SET.every((k) => ALGS[k]) &&
    Object.keys(ALGS).every((k) => ALG_SET.includes(k)),
    `ALGS registry: ${ALG_SET.length} dialects, exactly the expected set`);
 ok(ALGS['fnv1a64-fleet'].genesis === 'GENESIS', 'ALGS registry: fleet genesis');
+// PROVENANCE IS PART OF THE DIALECT. A dialect with no named source of truth
+// is a dialect that will drift: nobody can tell whether it still matches the
+// repo it claims to speak for. The comment above each entry names RULE FROM:
+// <repo>/<path>; this check makes that structural instead of aspirational.
+const CENSUS = {
+  'chrono-organ/1': 'quilt-chrono/src/seal.js',
+  'sha256-pyjson-probe': 'quilt-gpu-lab/experiments/d21_perception_ledger.py',
+  'quilt-cell-ledger/1': 'quilt-rust/packages/core/src/ledger.rs',
+  'quilt-edge/1': 'quilt-rust/bindings/go/internal/ledger/ledger.go',
+  'moth-ledger/1': 'moth-ledger/src/moth_ledger/ledger.py',
+  'quilt-doctor-wal': 'pong-quilt/tools/wal-export.js',
+};
+for (const [k, src_] of Object.entries(CENSUS)) {
+  const a = ALGS[k];
+  ok(!!a, `provenance: ${k} exists`);
+  ok(Array.isArray(a.repos) && a.repos.length > 0,
+    `provenance: ${k} names its owner repo(s) — ${a.repos.join(', ')}`);
+  ok(RULE_FROM[k] === src_, `provenance: ${k} still names ${src_} as its source of truth`);
+}
+// No dialect may claim a source of truth it does not have, and no registered
+// source may go unregistered: one direction silently rots a dialect, the
+// other silently loses its provenance.
+ok(Object.keys(RULE_FROM).every((k) => ALGS[k] && CENSUS[k] === RULE_FROM[k]),
+  'provenance: RULE_FROM and the census dialect set agree, both directions');
+ok(Object.keys(ALGS).every((k) => ALGS[k].repos && ALGS[k].repos.length > 0),
+  'provenance: every dialect in the registry names at least one owner repo');
 // the new dialect's shape, pinned
 ok(ALGS['fnv1a64-utf8-pyjson'] && ALGS['fnv1a64-utf8-pyjson'].hashField === 'hash' &&
    ALGS['fnv1a64-utf8-pyjson'].prevField === 'prev' &&

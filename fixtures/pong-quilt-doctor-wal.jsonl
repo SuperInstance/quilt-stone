@@ -1,0 +1,5 @@
+{"args":{"source":"tools/wal-export.js demo driver (Round 26)","tool":"pong-quilt"},"cell":"pq/session","hash":"5ca8648e4f824122","op":"BIND","prev_hash":"0000000000000000","seq":0}
+{"args":{"conf":0.42,"gen":0,"kind":"L2","move":1},"cell":"pq/receipt","hash":"6c8f77a296b49d42","op":"LINK","prev_hash":"5ca8648e4f824122","seq":1}
+{"args":{"conf":0,"gen":3,"kind":"DEATH","move":0},"cell":"pq/receipt","hash":"6e07b6d32af4fa92","op":"LINK","prev_hash":"6c8f77a296b49d42","seq":2}
+{"args":{"conf":0,"gen":3,"kind":"QA-REFUSAL","move":0},"cell":"pq/receipt","hash":"0c1ced3f8a7822d8","op":"LINK","prev_hash":"6e07b6d32af4fa92","seq":3}
+{"args":{"evicted":41,"shown":3},"cell":"pq/projection/eviction","hash":"13db786107a4bc64","op":"VIEW","prev_hash":"0c1ced3f8a7822d8","seq":4}

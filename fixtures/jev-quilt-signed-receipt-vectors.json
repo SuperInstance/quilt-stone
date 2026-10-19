@@ -1,0 +1,28 @@
+{
+ "blake3": {
+  "abc_hex": "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85",
+  "empty_hex": "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+ },
+ "comment": "Cross-language contract for the receipts-v2 envelope (docs/RECEIPTS-V2.md). Fixed seed is TEST MATERIAL, never a real node key. Any port (Rust ports/, TS twist-engine) MUST reproduce these bytes exactly; byte-identity is the acceptance test. Generated 2026-09-24 by the receipts-v2 lane, pin-time cross-checked against PyNaCl (ed25519) and the official blake3 package.",
+ "ed25519": {
+  "message_hex": "72656365697074732d76322063726f73732d6c616e677561676520766563746f72207631",
+  "public_key_hex": "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29",
+  "seed_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+  "signature_hex": "e2d47dccd792e984054b6e021a92169a4a17f9dde3c855426cea7617050b2187c463dca2300550078b74569ef13c658b7595b266f1e72ce6717f0d537c97c505"
+ },
+ "envelope": {
+  "canonical_hex": "377c616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161617c626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262627c646563696465647c65636636613765376431393134316630",
+  "chain_head": "ec631990456e2f45",
+  "chain_tip": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "receipt": {
+   "decision_kind": "decided",
+   "delta_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+   "payload": "{\"vector\": true}",
+   "payload_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "state_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "tick": 7
+  },
+  "signature_hex": "ee30652837bd79bfabc63e61c538410a3c16c19f7dae24b44b0341b8b541cf939d2bffb9c87235925664ef115be67af53cbe54f75aa704f1072b3b525616fe05",
+  "signer": "vectornode.k1"
+ }
+}
