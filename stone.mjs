@@ -351,6 +351,16 @@ export const ALGS = {
     //          running tip
     //   GENESIS = '0x0000000000000000'
     //
+    // AND THE SOURCE'S OWN DOCSTRING SAID "tamper-evident". IT WAS WRONG,
+    // AND IT WAS WRONG IN A WAY THAT MATTERED: that docstring is where
+    // this chain RULE comes from, so the dialect inherited a false claim
+    // about itself. The source docstring is corrected in the same change
+    // (SuperInstance/AI-Writings#90). The chain re-derives, which is LEG 1
+    // of 3 -- a re-chained edit verifies perfectly and a truncated tail
+    // still verifies -- and the head is neither signed nor published out
+    // of band, so legs 2 and 3 do not exist. The honest word is
+    // ATTESTABLE.
+    //
     // THREE THINGS MAKE IT A DIALECT OF ITS OWN:
     //   * FNV over UTF-8 BYTES. Every other dialect here iterates UTF-16
     //     CODE UNITS, because that is what JavaScript strings are made of.
