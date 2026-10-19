@@ -170,17 +170,36 @@ function walkJsonl(dir, out, depth = 0) {
   }
 }
 
-// A file is a receipt chain iff its rows carry chain link fields.
+// A file is a receipt CHAIN iff its rows carry chain link fields; and it is a
+// SEALED SET iff its rows carry only a per-record content seal and no linkage
+// at all (quilt-gpu-lab's probes). The two are counted separately on purpose:
+// a sealed set verifies under its own dialect and says NOTHING about its
+// neighbours, so calling it a chain would overstate what was proved.
+//
+// The link shapes below are the ones ALGS declares, and nothing else:
+//   row_hash                              fleet / exoj / quant / tidepool
+//   hash + prev                           rawpipe / calculator-quilt / chrono organ
+//   hash + prev_hash                      quilt-cell-ledger/1, quilt-doctor-wal
+//   row_hash + prev_hash                  moth-ledger/1
+//   chain (+ provenance)                  quilt-edge/1
+//   sha256, no link field at all          quilt-gpu-lab's probe seal
 function sniffChainFile(path) {
   let rows;
   try {
     rows = parseJsonl(readFileSync(path, 'utf8'));   // THE parser -- a second one misdiagnoses a valid chain
   } catch { return { chain: false, reason: 'not parseable as JSONL' }; }
   if (!Array.isArray(rows) || rows.length === 0) return { chain: false, reason: 'empty file' };
-  const hasLinks = (r) => r && typeof r === 'object' &&
-    (r.row_hash !== undefined || (r.hash !== undefined && r.prev !== undefined) ||
+  const isObj = (r) => r && typeof r === 'object';
+  const hasLinks = (r) => isObj(r) &&
+    (r.row_hash !== undefined || r.chain_hash !== undefined || r.chain !== undefined ||
+     (r.hash !== undefined && r.prev !== undefined) ||
+     (r.hash !== undefined && r.prev_hash !== undefined) ||
      (r.row_hash !== undefined && r.prev_hash !== undefined));
-  if (!rows.some(hasLinks)) return { chain: false, reason: 'no link fields (not a chain)' };
+  if (!rows.some(hasLinks)) {
+    const sealed = rows.some((r) => isObj(r) && r.sha256 !== undefined);
+    if (sealed) return { chain: true, sealedSet: true, rows };
+    return { chain: false, reason: 'no link fields (not a chain)' };
+  }
   return { chain: true, rows };
 }
 
@@ -205,14 +224,20 @@ export async function discoverChains(root = ROOT) {
 export async function runConformance({ root = ROOT, log = () => {} } = {}) {
   await loadLocals();
   const discovered = await discoverChains(root);
-  const chains = discovered.filter((d) => d.chain);
+  const chains = discovered.filter((d) => d.chain && !d.sealedSet);
+  // Per-record seals with no linkage: verified, counted, and reported on
+  // their own line so a sealed set is never read as a linked chain.
+  const sealedSets = discovered.filter((d) => d.chain && d.sealedSet);
   const notChains = discovered.filter((d) => !d.chain);
   const results = [];
   for (const c of chains) {
     const alg = detectAlg(c.rows);
     const stone = verifyChain(c.rows);
     const local = localVerify(c.repo, c.rows);
-    const agree = local.available ? (local.ok === stone.ok) : null;
+    // A SELF chain (quilt-stone's own files, verified by quilt-stone) has no
+    // independent verdict to compare against, so `agree` is null rather than
+    // a false "divergence" manufactured by comparing stone with itself.
+    const agree = local.self ? null : (local.available ? (local.ok === stone.ok) : null);
     results.push({
       repo: c.repo,
       file: c.relFile,
@@ -231,18 +256,32 @@ export async function runConformance({ root = ROOT, log = () => {} } = {}) {
       agree,
     });
   }
+  const sealedResults = sealedSets.map((c) => {
+    const stone = verifyChain(c.rows);
+    return {
+      repo: c.repo, file: c.relFile, rows: c.rows.length,
+      alg: detectAlg(c.rows), ok: stone.ok, why: stone.why,
+      firstBadIndex: stone.firstBadIndex,
+    };
+  });
   const tally = {
     reposScanned: new Set(discovered.map((d) => d.repo)).size,
     jsonlScanned: discovered.length,
     chainsFound: chains.length,
     chainsVerified: results.filter((r) => r.ok).length,
-    chainsBroken: results.filter((r) => !r.ok).length,
+    chainsBroken: results.filter((r) => !r.ok && !/genesis commit not present/.test(r.why ?? '')).length,
+    // Verified-as-far-as-the-rows-allow, but rooted at a per-chain commit the
+    // rows do not carry. Counted apart from BOTH "verified" and "broken": a
+    // dialect that needs a genesis it was not given is not a tamper finding.
+    chainsNeedingGenesis: results.filter((r) => !r.ok && /genesis commit not present/.test(r.why ?? '')).length,
     selfChains: results.filter((r) => r.self).length,
     localCrossChecked: results.filter((r) => r.localAvailable).length,
     divergences: results.filter((r) => r.agree === false),
+    sealedSetsFound: sealedResults.length,
+    sealedSetsVerified: sealedResults.filter((r) => r.ok).length,
     nonChainJsonl: notChains.map((d) => ({ repo: d.repo, file: d.relFile, reason: d.reason })),
   };
-  return { results, tally };
+  return { results, sealedResults, tally };
 }
 
 // ---------------------------------------------------------------------------
@@ -250,7 +289,7 @@ export async function runConformance({ root = ROOT, log = () => {} } = {}) {
 // ---------------------------------------------------------------------------
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
-  const { results, tally } = await runConformance({ log: console.log });
+  const { results, sealedResults, tally } = await runConformance({ log: console.log });
   const w = [4, 44, 5, 17, 5, 8, 10];
   const pad = (s, n) => String(s ?? '').slice(0, n - 1).padEnd(n);
   console.log('REPO          FILE' + ' '.repeat(40) + 'ROWS ALG               OK    BAD-IDX TIP');
@@ -263,11 +302,17 @@ if (isMain) {
     if (r.agree === false) console.log(`              ^^ LOCAL DIVERGENCE: localOk=${r.localOk} localTip=${r.localTip}`);
     if (r.agree === null && r.localAvailable === false) console.log(`              ^^ local verifier unavailable (${r.localTip ?? ''}) — R2 cross-check skipped`);
   }
+  console.log('\nsealed sets (per-record seals, NO linkage -- verified, not counted as chains):');
+  for (const s of sealedResults) {
+    console.log('  ' + pad(s.repo, 14) + pad(s.file, 45) + pad(s.rows, 5) + pad(s.alg, 19) +
+      pad(s.ok ? 'ok' : 'BAD', 6) + (s.ok ? '' : `bad@${s.firstBadIndex} ${s.why}`));
+  }
   console.log('\nnon-chain .jsonl scanned (excluded from tally):');
   for (const nc of tally.nonChainJsonl) console.log(`  ${nc.repo}: ${nc.file} — ${nc.reason}`);
   console.log(`\nTALLY: ${tally.chainsVerified}/${tally.chainsFound} chains verified under their own semantics` +
     ` | local cross-check ${tally.localCrossChecked}/${tally.chainsFound}` +
-    ` | divergences ${tally.divergences.length} | repos scanned ${tally.reposScanned} | jsonl scanned ${tally.jsonlScanned}`);
+    ` | divergences ${tally.divergences.length} | repos scanned ${tally.reposScanned} | jsonl scanned ${tally.jsonlScanned}` +
+    ` | sealed sets ${tally.sealedSetsVerified}/${tally.sealedSetsFound} (unlinked, not chains)`);
   const allGood = tally.chainsBroken === 0 && tally.divergences.length === 0;
   console.log(allGood ? 'CONFORMANCE GREEN' : 'CONFORMANCE RED');
   process.exit(allGood ? 0 : 1);

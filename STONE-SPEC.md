@@ -88,6 +88,38 @@ interpret kinds; it only guarantees the links.
 | stone-v1 | `'STONE-GENESIS-1'` (or the header row's recorded `genesis`) |
 | fnv1a64-utf8-pyjson | `'0x0000000000000000'` |
 | witness-chain-v1 | `'0x0000000000000000'` |
+| chrono-organ/1 | `'GENESIS'` (quilt-chrono's own `CHAIN_GENESIS`) |
+| sha256-pyjson-probe | **none** — no linkage, `genesis` is `null` |
+| quilt-cell-ledger/1 | **per-cell commit hash** (see below) — not a string |
+| quilt-edge/1 | **per-cell commit hash** (see below) — not a string |
+| moth-ledger/1 | `'0000000000000000'` (16 zeros) |
+| quilt-doctor-wal | `'0000000000000000'` (16 zeros) |
+
+### 3a. Genesis that is not a string
+
+Two of the fleet's dialects root at a **per-chain COMMIT HASH** rather than a
+constant, and that is not a detail:
+
+```
+quilt-cell-ledger/1 : sha256_hex( ryū_canonical_json({
+    "kind": "quilt-cell-ledger/1", "cell_id": …, "genesis": …, "genesis_ts": … }) )
+quilt-edge/1        : sha256_hex( ryū_canonical_json({
+    "kind": "quilt-edge/1", "cell": …, "genesis": …, "genesis_ts": … }) )
+```
+
+The commit binds the cell's **identity and its declared initial state**, so
+two cells' ledgers never share a root and a chain cannot be transplanted
+between them. Two consequences a verifier must handle honestly:
+
+1. The root generally **cannot be recovered from the entries**, because the
+   cell identity lives on the ledger, not on its rows. A caller holding only
+   entries supplies it (`ryuGenesisCommit` / `ryuEdgeGenesis`) or gets a
+   verdict that says so. It is **not** a tamper finding, and the fleet scan
+   counts it apart from both "verified" and "broken" (`chainsNeedingGenesis`).
+2. `genesis_ts` is a `u64` and `genesis` is typically an `f64`. The lexical
+   form decides the preimage: the committed quilt-rust genesis reproduces only
+   with `"genesis_ts":1000`, while the golden's own transcript renders
+   `1000.0`. **The transcript is a rendering; the hash is the law.**
 
 The genesis is a **string hashed into row 0** — there is no separate genesis
 object in the file. Repos that pass a custom genesis to `sealChain` must
@@ -353,3 +385,47 @@ claim. The interop surface to watch is the signed-agent-receipt ecosystem:
   `stone.header` prefix (or define a new alg) rather than silently renaming
   chain rows. Recheck this section whenever the Compliance Receipts draft
   rev changes; the smoke pins make silent drift loud.
+
+
+## 10. The 2026-10 census dialects — and what the census got wrong
+
+A fleet-wide sweep found ten repos defining chain rules this module did not
+know. Each was read in its owner's source, pinned with a fixture from the
+owner's own repo, and given a negative control. Two of the outcomes are worth
+recording in the spec itself, because they are rules about how to pin a rule:
+
+**A candidate is not a dialect.** Three of the ten define something else
+entirely: `quilt-research-canons/chain-lint.py` is a *linter* that decides
+whether a `prev_hash` field holds a real link or sixteen zeros — no hash, no
+canonical form, no genesis; `quilt-crabbox` signs a *single* receipt document
+with length-prefixed framing and has no rows to link; and one docstring
+described a hash the shipped code never computes. Adding a dialect for any of
+them would have made the registry longer and the truth shorter.
+
+**Two candidates were the same rule as dialects already here.** `quilt-arcade`'s
+`verifyChain` is byte-identical to `fnv1a64-quant`; `pong-quilt`'s
+`canonicalJSON` lineage chain is `stone-v1`. The fleet has fewer dialects than
+a census by filename suggests, and a duplicate entry would have been a lie
+about provenance.
+
+**The hard part is detection, not hashing.** `detectAlg` tries dialects in
+order, and a wrong order silently reassigns chains — so every new rung is
+taken only on a full re-derivation, never on a shape guess. For chains too
+broken to trial-identify, the fallback is pinned on the **hash width**, which
+is the same discriminator the pre-existing `row_hash` ladder uses; a broken
+chain is reported under the dialect that can actually apply to it rather than
+under the first candidate, because naming the wrong rule also names the wrong
+row and the wrong reason.
+
+**Python's `json.dumps(sort_keys=True)` is not one thing, it is three.**
+Compact separators (the `fnv1a64-utf8-pyjson` law), Python's default
+`', '` / `': '` separators (`sha256-pyjson-probe`), and `ensure_ascii` on or
+off (`moth-ledger/1`) are three different byte strings. They are now three
+named functions in `stone.mjs` — `pyJsonDumps`, `pyJsonDumpsLoose`,
+`pyJsonDumpsUtf8` — because a dialect that cannot say which one it means will
+eventually mean the wrong one.
+
+**ryū is not JCS.** RFC 8785 sends `40.0` as `40`; serde_json sends `40.0`.
+They also sort keys by UTF-8 byte order against UTF-16 code unit. Both
+dialects that need ryū are pinned against committed quilt-rust hashes that JCS
+provably cannot reproduce.
